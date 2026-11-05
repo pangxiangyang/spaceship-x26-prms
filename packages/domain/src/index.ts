@@ -22,5 +22,6 @@ export * from './audit/AuditEvent';
 export type { AuditLog, AuditPage, AuditQuery } from './audit/AuditLog';
 export * from './audit/AuditTrail';
 export * from './audit/AuditService';
+export * from './reporting/ReportService';
 export * from './createPrmsDomain';
 export * from './adapters/in-memory';

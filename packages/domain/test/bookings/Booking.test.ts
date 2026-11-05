@@ -9,6 +9,7 @@ const newBooking = () =>
     id: 'b-1',
     passengerId: 'p-1',
     resourceId: 'r-1',
+    passengerTier: 'SILVER',
     slot: TimeSlot.of(t('10:00'), t('11:00')),
     createdAt: t('08:00'),
   });

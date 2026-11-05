@@ -6,6 +6,7 @@ import type { BookingRepository } from './bookings/BookingRepository';
 import { BookingRevocation } from './bookings/BookingRevocation';
 import { BookingService } from './bookings/BookingService';
 import type { ResourceRepository } from './resources/ResourceRepository';
+import { ReportService } from './reporting/ReportService';
 import { ResourceService } from './resources/ResourceService';
 import { AsyncMutex } from './shared/AsyncMutex';
 import { systemClock, uuidGenerator, type Clock, type IdGenerator } from './shared/ports';
@@ -33,6 +34,7 @@ export interface PrmsDomain {
   resources: ResourceService;
   bookings: BookingService;
   audit: AuditService;
+  reports: ReportService;
   repositories: PrmsRepositories;
   clock: Clock;
 }
@@ -56,6 +58,7 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
     resources: new ResourceService(shared),
     bookings: new BookingService({ ...shared, policy }),
     audit: new AuditService(repositories.auditLog),
+    reports: new ReportService({ ...repositories, clock }),
     repositories,
     clock,
   };

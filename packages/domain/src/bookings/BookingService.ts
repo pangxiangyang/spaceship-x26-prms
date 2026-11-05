@@ -81,6 +81,7 @@ export class BookingService {
             id: this.deps.ids.next(),
             passengerId: passenger.id,
             resourceId: resource.id,
+            passengerTier: passenger.tier,
             slot,
             createdAt: now,
           });

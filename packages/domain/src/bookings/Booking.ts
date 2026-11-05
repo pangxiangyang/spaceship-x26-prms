@@ -1,3 +1,4 @@
+import type { MembershipTier } from '../membership/MembershipTier';
 import { ConflictError } from '../shared/errors';
 import type { TimeSlot } from './TimeSlot';
 
@@ -26,6 +27,8 @@ export interface BookingProps {
   id: string;
   passengerId: string;
   resourceId: string;
+  /** The passenger's tier when the booking was made — reports group by this. */
+  passengerTier: MembershipTier;
   slot: TimeSlot;
   createdAt: Date;
 }
@@ -40,6 +43,7 @@ export class Booking {
   readonly id: string;
   readonly passengerId: string;
   readonly resourceId: string;
+  readonly passengerTier: MembershipTier;
   readonly slot: TimeSlot;
   readonly createdAt: Date;
   private _status: BookingStatus = BookingStatus.CONFIRMED;
@@ -51,6 +55,7 @@ export class Booking {
     this.id = props.id;
     this.passengerId = props.passengerId;
     this.resourceId = props.resourceId;
+    this.passengerTier = props.passengerTier;
     this.slot = props.slot;
     this.createdAt = props.createdAt;
   }
