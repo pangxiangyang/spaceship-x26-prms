@@ -1,0 +1,20 @@
+{
+  "name": "@prms/domain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Framework-free business rules for the Spaceship X26 PRMS",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^5.1.0",
+    "vitest": "^5.1.0"
+  }
+}

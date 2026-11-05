@@ -1,0 +1,36 @@
+{
+  "name": "spaceship-x26-prms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Spaceship X26 Passenger Resource Management System (PRMS)",
+  "type": "module",
+  "workspaces": [
+    "packages/domain",
+    "packages/api",
+    "packages/web"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @prms/api\" \"npm run dev -w @prms/web\"",
+    "build": "npm run build -w @prms/web && npm run build -w @prms/api",
+    "start": "npm run start -w @prms/api",
+    "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run lint && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "concurrently": "^10.0.6",
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1"
+  }
+}

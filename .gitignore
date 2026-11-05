@@ -147,3 +147,9 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Project-specific
+test-results/
+.vite/
+.env.*
+!.env.example
