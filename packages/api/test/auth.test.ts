@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest';
+import { createTestApp } from './support/testApp';
+
+describe('authentication', () => {
+  it('issues a token and profile on valid credentials', async () => {
+    const { api } = await createTestApp();
+    const res = await api
+      .post('/api/auth/login')
+      .send({ username: 'commander', password: 'crewlead123' })
+      .expect(200);
+    expect(res.body.token).toEqual(expect.any(String));
+    expect(res.body.user).toMatchObject({ username: 'commander', role: 'CREW_LEAD', tier: null });
+  });
+
+  it('gives the same answer for an unknown user and a wrong password', async () => {
+    const { api } = await createTestApp();
+    const wrong = await api
+      .post('/api/auth/login')
+      .send({ username: 'commander', password: 'nope' });
+    const unknown = await api.post('/api/auth/login').send({ username: 'ghost', password: 'nope' });
+    expect(wrong.status).toBe(401);
+    expect(unknown.status).toBe(401);
+    expect(wrong.body).toEqual(unknown.body);
+  });
+
+  it('validates the login payload', async () => {
+    const { api } = await createTestApp();
+    const res = await api.post('/api/auth/login').send({ username: '' }).expect(400);
+    expect(res.body.error.code).toBe('INVALID_REQUEST');
+    expect(res.body.error.issues.map((i: { path: string }) => i.path)).toEqual(
+      expect.arrayContaining(['username', 'password']),
+    );
+  });
+
+  it('rate-limits repeated sign-in attempts', async () => {
+    // The test harness signs the commander in once, which counts towards the limit.
+    const { api } = await createTestApp({ loginRateLimit: { windowMs: 60_000, max: 3 } });
+    for (let i = 0; i < 2; i += 1) {
+      await api.post('/api/auth/login').send({ username: 'x', password: 'y' }).expect(401);
+    }
+    const res = await api
+      .post('/api/auth/login')
+      .send({ username: 'x', password: 'y' })
+      .expect(429);
+    expect(res.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('rejects requests without, or with a tampered, bearer token', async () => {
+    const { api, crewToken } = await createTestApp();
+    expect((await api.get('/api/me')).status).toBe(401);
+    expect((await api.get('/api/me').set('Authorization', crewToken)).status).toBe(401);
+    const tampered = `${crewToken.slice(0, -2)}xx`;
+    const res = await api.get('/api/me').set('Authorization', `Bearer ${tampered}`).expect(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+
+  it('returns the signed-in user', async () => {
+    const { api, createPassenger, auth } = await createTestApp();
+    const pax = await createPassenger('GOLD');
+    const res = await api.get('/api/me').set(auth(pax.token)).expect(200);
+    expect(res.body.user).toMatchObject({ id: pax.id, role: 'PASSENGER', tier: 'GOLD' });
+  });
+});
