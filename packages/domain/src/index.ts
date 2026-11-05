@@ -1,0 +1,26 @@
+// Public API of the PRMS domain. Delivery layers depend on this module only.
+export * from './shared/errors';
+export * from './shared/ports';
+export { AsyncMutex } from './shared/AsyncMutex';
+export * from './membership/MembershipTier';
+export * from './identity/Actor';
+export * from './identity/authorization';
+export * from './users/User';
+export type { UserRepository } from './users/UserRepository';
+export * from './users/CrewLeadService';
+export * from './users/PassengerService';
+export * from './resources/ResourceCategory';
+export * from './resources/Resource';
+export type { ResourceRepository } from './resources/ResourceRepository';
+export * from './resources/ResourceService';
+export * from './bookings/TimeSlot';
+export * from './bookings/Booking';
+export * from './bookings/BookingPolicy';
+export type { BookingRepository } from './bookings/BookingRepository';
+export * from './bookings/BookingService';
+export * from './audit/AuditEvent';
+export type { AuditLog, AuditPage, AuditQuery } from './audit/AuditLog';
+export * from './audit/AuditTrail';
+export * from './audit/AuditService';
+export * from './createPrmsDomain';
+export * from './adapters/in-memory';

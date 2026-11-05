@@ -16,6 +16,6 @@ export function assertPassenger(actor: Actor): void {
 export function assertSelfOrCrewLead(actor: Actor, passengerId: string): void {
   if (actor.role === Role.CREW_LEAD) return;
   if (actor.userId !== passengerId) {
-    throw new ForbiddenError("You can only access your own passenger records.");
+    throw new ForbiddenError('You can only access your own passenger records.');
   }
 }

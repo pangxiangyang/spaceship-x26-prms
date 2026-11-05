@@ -37,18 +37,25 @@ describe('CrewLeadService', () => {
   it('registers up to three crew leads', async () => {
     await registerThree();
     const lead = { userId: 'crew-1', role: Role.CREW_LEAD };
-    expect((await service.list(lead)).map((l) => l.username)).toEqual(['alpha', 'bravo', 'charlie']);
+    expect((await service.list(lead)).map((l) => l.username)).toEqual([
+      'alpha',
+      'bravo',
+      'charlie',
+    ]);
   });
 
   it('refuses a fourth crew lead and audits the denied attempt', async () => {
     await registerThree();
-    await expect(service.register({ username: 'delta', displayName: 'Lead delta' })).rejects.toThrow(
-      expect.objectContaining({ code: 'CREW_LEAD_LIMIT_REACHED' }),
-    );
+    await expect(
+      service.register({ username: 'delta', displayName: 'Lead delta' }),
+    ).rejects.toThrow(expect.objectContaining({ code: 'CREW_LEAD_LIMIT_REACHED' }));
 
     const { items } = await auditLog.query({ action: 'CREW_LEAD_REGISTER', outcome: 'DENIED' });
     expect(items).toHaveLength(1);
-    expect(items[0]?.details).toMatchObject({ username: 'delta', reason: 'CREW_LEAD_LIMIT_REACHED' });
+    expect(items[0]?.details).toMatchObject({
+      username: 'delta',
+      reason: 'CREW_LEAD_LIMIT_REACHED',
+    });
   });
 
   it('refuses even when four registrations race each other', async () => {

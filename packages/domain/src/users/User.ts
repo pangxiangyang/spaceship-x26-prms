@@ -1,9 +1,5 @@
 import { Role } from '../identity/Actor';
-import {
-  isMembershipTier,
-  tierIncludes,
-  type MembershipTier,
-} from '../membership/MembershipTier';
+import { isMembershipTier, tierIncludes, type MembershipTier } from '../membership/MembershipTier';
 import { ValidationError } from '../shared/errors';
 import { requireNonBlank } from '../shared/validation';
 
