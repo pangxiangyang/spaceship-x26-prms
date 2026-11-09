@@ -213,7 +213,7 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 ```
 
 Dependencies point inward. The domain knows nothing about HTTP, Express, React, JWTs or
-Firestore, so it can be tested quickly and in isolation (134 tests run in about 1.5 s). Adding
+Firestore, so it can be tested quickly and in isolation (145 tests run in about 1.5 s). Adding
 Firestore didn't change a single domain service. It only needed new adapters for the
 existing ports.
 
@@ -262,10 +262,10 @@ overlapping, wrong state, duplicate username) · `429` too many sign-in attempts
 | Suite  | Tests | Style                                                                     |
 | ------ | ----- | ------------------------------------------------------------------------- |
 | domain | 145   | Unit and service tests with a controllable clock, no mocks of the domain  |
-| api    | 86    | Integration tests over real HTTP (supertest) and a storage contract suite |
+| api    | 88    | Integration tests over real HTTP (supertest) and a storage contract suite |
 | web    | 26    | API client, booking dialog, bookings, reports, audit paging, routing      |
 
-Of the 86 API tests, 18 are the Firestore half of the storage contract and are skipped
+Of the 88 API tests, 19 are the Firestore half of the storage contract and are skipped
 unless a Firestore target is configured (see below). Every business rule has tests, and
 domain line coverage is about 99%.
 

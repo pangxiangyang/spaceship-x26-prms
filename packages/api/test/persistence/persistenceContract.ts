@@ -297,6 +297,27 @@ export function describePersistenceContract(
         ).toEqual(['e-3']);
       });
 
+      it('counts the total of a page that combines filters with a time range', async () => {
+        const { auditLog } = store.repositories;
+        const page = await auditLog.query({
+          action: 'BOOKING_CREATE',
+          from: at('09:05'),
+          limit: 5,
+        });
+        expect(page.items.map((e) => e.id)).toEqual(['e-4', 'e-3']);
+        expect(page.total).toBe(2);
+
+        const denied = await auditLog.query({
+          action: 'BOOKING_CREATE',
+          outcome: 'DENIED',
+          from: at('09:00'),
+          to: at('09:30'),
+          limit: 1,
+        });
+        expect(denied.items.map((e) => e.id)).toEqual(['e-3']);
+        expect(denied.total).toBe(1);
+      });
+
       it('pages with a cursor, newest first, with the total on every page', async () => {
         const { auditLog } = store.repositories;
         // Same moment as e-4: the id breaks the tie, so no event is skipped or repeated.

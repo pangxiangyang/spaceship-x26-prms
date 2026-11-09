@@ -83,7 +83,6 @@ export interface ResourceDemand {
    */
   peakUtilization: number;
   /** Booking requests refused because the resource was full. */
-  /** Bookings refused because the resource was full. */
   capacityDenials: number;
   /** Different passengers among those refusals. */
   turnedAwayPassengers: number;

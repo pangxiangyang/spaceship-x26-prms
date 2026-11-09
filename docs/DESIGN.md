@@ -129,8 +129,9 @@ Choices worth noting:
   so a corrupt document is rejected at the boundary instead of leaking into business logic.
 - **Queries cost what they return, not the size of the mission.** Firestore bills every
   document read. Use cases always ask for bookings in a time window: one equality filter
-  plus `end > window.start`, with the start checked in memory (a booking lasts at most a few
-  hours). The audit log filters, orders and pages in the database, with a cursor rather
+  plus `end > window.start`, with the start checked in memory. That also returns every later
+  booking, so a query reads up to 14 days of future bookings (the booking horizon) but never
+  the mission's history. The audit log filters, orders and pages in the database, with a cursor rather
   than an offset (skipped documents would still be billed), so a page costs about `limit`
   reads plus one count. The composite indexes this needs are defined in
   `deploy/firestore.indexes.json` and created by the deploy script, which waits until they

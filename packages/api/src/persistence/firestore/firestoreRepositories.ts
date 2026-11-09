@@ -290,7 +290,8 @@ export class FirestoreBookings implements BookingRepository {
   /**
    * Firestore allows a range filter on one field, so the query asks for bookings that end
    * after the window starts (served by the `(…, end)` composite indexes) and the start is
-   * checked here. A booking lasts at most a few hours, so few extra documents are read.
+   * checked here. That also returns every later booking, up to the 14-day booking horizon,
+   * so the cost is bounded by that horizon rather than by the length of the mission.
    */
   private async overlapping(query: Query, window: TimeSlot): Promise<Booking[]> {
     const endingAfterStart = await this.list(query.where('end', '>', window.start));
@@ -332,7 +333,9 @@ export class FirestoreAuditLog implements AuditLog {
     }
     const [snapshot, count] = await Promise.all([
       page.limit(query.limit + 1).get(),
-      filtered.count().get(),
+      // Ordered like the page, so a filter with a time range is served by the same
+      // (field, occurredAt desc) index; unordered, it would need an ascending one.
+      filtered.orderBy('occurredAt', 'desc').count().get(),
     ]);
     const events = snapshot.docs.map((d) => auditEventFromDocument(d.id, d.data()));
     const items = events.slice(0, query.limit);
