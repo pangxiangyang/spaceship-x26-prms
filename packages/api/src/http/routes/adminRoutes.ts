@@ -4,6 +4,7 @@ import {
   ALL_RESOURCE_CATEGORIES,
   ALL_TIERS,
   AuditAction,
+  DEFAULT_DEMAND_THRESHOLDS,
   TimeSlot,
   type MembershipTier,
   type ResourceCategory,
@@ -170,8 +171,10 @@ export function adminRoutes({ auth, domain }: AppContainer): Router {
 
   router.get('/reports/resource-demand', async (req, res) => {
     const period = periodFrom(req.query);
-    const resources = await domain.reports.resourceDemand(actorOf(res), period);
-    res.json({ period: presentPeriod(period), resources });
+    const thresholds = DEFAULT_DEMAND_THRESHOLDS;
+    const resources = await domain.reports.resourceDemand(actorOf(res), period, thresholds);
+    // Returned so the client explains the levels without repeating the numbers.
+    res.json({ period: presentPeriod(period), thresholds, resources });
   });
 
   return router;

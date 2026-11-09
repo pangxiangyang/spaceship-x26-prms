@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ResourceDemand, TierUsage } from '../../api/types';
+import type { DemandThresholds, ResourceDemand, TierUsage } from '../../api/types';
 import { ErrorBanner, Loading, Meter, PageHeader, TierBadge } from '../../components/ui';
 import { useApiData } from '../../hooks/useApiData';
 import {
@@ -21,6 +21,28 @@ interface Period {
   to: string;
 }
 
+/** Why a resource got its demand level, e.g. "6 turned away" or "82% average use". */
+function demandReasonText(r: ResourceDemand): string | null {
+  switch (r.demandReason) {
+    case 'TURNED_AWAY':
+      return `${r.capacityDenials} turned away`;
+    case 'UTILIZATION':
+      return `${formatPercent(r.utilization)} average use`;
+    default:
+      return null;
+  }
+}
+
+function DemandBadge({ resource }: { resource: ResourceDemand }) {
+  const reason = demandReasonText(resource);
+  return (
+    <span className={`badge demand-${resource.demandLevel.toLowerCase()}`}>
+      {formatCode(resource.demandLevel)}
+      {reason && ` · ${reason}`}
+    </span>
+  );
+}
+
 export function ReportsPage() {
   const [days, setDays] = useState(7);
   const range = () => {
@@ -34,7 +56,7 @@ export function ReportsPage() {
   );
   const demand = useApiData(
     (api) =>
-      api.get<{ period: Period; resources: ResourceDemand[] }>(
+      api.get<{ period: Period; thresholds: DemandThresholds; resources: ResourceDemand[] }>(
         '/api/admin/reports/resource-demand',
         range(),
       ),
@@ -71,7 +93,8 @@ export function ReportsPage() {
 
       {hot.length > 0 && (
         <div className="alert alert-warning" role="status">
-          <strong>Shortage risk:</strong> {hot.map((r) => r.resourceName).join(', ')}{' '}
+          <strong>Shortage risk:</strong>{' '}
+          {hot.map((r) => `${r.resourceName} (${demandReasonText(r)})`).join(', ')}{' '}
           {hot.length === 1 ? 'is' : 'are'} in high demand. Consider adding capacity.
         </div>
       )}
@@ -115,10 +138,16 @@ export function ReportsPage() {
 
       <section>
         <h2 className="section-title">Resource demand</h2>
-        <p className="muted small">
-          Utilisation is booked time divided by available time (capacity × period). A resource is
-          high demand at 75% or more, or as soon as a passenger is turned away because it was full.
-        </p>
+        {demand.data && (
+          <p className="muted small">
+            <strong>Average use</strong> is booked time divided by available time (capacity ×
+            period), so quiet nights pull it down. <strong>Peak use</strong> is how full the
+            resource got at its busiest moment. A resource is in high demand as soon as anyone is
+            turned away because it was full, or when average use reaches{' '}
+            {formatPercent(demand.data.thresholds.high)}; moderate from{' '}
+            {formatPercent(demand.data.thresholds.moderate)}.
+          </p>
+        )}
         {demand.loading && !demand.data && <Loading />}
         {demand.data && (
           <div className="table-wrap">
@@ -129,7 +158,8 @@ export function ReportsPage() {
                   <th>Tier</th>
                   <th>Capacity</th>
                   <th>Bookings</th>
-                  <th className="wide">Utilisation</th>
+                  <th>Average use</th>
+                  <th className="wide">Peak use</th>
                   <th>Turned away</th>
                   <th>Demand</th>
                 </tr>
@@ -143,17 +173,16 @@ export function ReportsPage() {
                     </td>
                     <td>{r.capacity}</td>
                     <td>{r.bookings}</td>
+                    <td>{formatPercent(r.utilization)}</td>
                     <td>
                       <div className="meter-row">
-                        <Meter ratio={r.utilization} level={r.demandLevel} />
-                        <span>{formatPercent(r.utilization)}</span>
+                        <Meter ratio={r.peakUtilization} level={r.demandLevel} />
+                        <span>{formatPercent(r.peakUtilization)}</span>
                       </div>
                     </td>
                     <td>{r.capacityDenials}</td>
                     <td>
-                      <span className={`badge demand-${r.demandLevel.toLowerCase()}`}>
-                        {formatCode(r.demandLevel)}
-                      </span>
+                      <DemandBadge resource={r} />
                     </td>
                   </tr>
                 ))}

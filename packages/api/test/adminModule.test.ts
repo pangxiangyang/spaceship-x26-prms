@@ -160,11 +160,15 @@ describe('admin module (Crew Leads)', () => {
       .set(auth(crewToken))
       .expect(200);
     expect(demand.body.period).toEqual({ from: at(0), to: at(60) });
+    // The client explains levels with these instead of hard-coding them.
+    expect(demand.body.thresholds).toEqual({ high: 0.75, moderate: 0.4 });
     expect(demand.body.resources[0]).toMatchObject({
       resourceId: pod.id,
       utilization: 1,
+      peakUtilization: 1,
       capacityDenials: 1,
       demandLevel: 'HIGH',
+      demandReason: 'TURNED_AWAY',
     });
 
     await api

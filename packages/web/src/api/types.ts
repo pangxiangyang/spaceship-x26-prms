@@ -97,9 +97,20 @@ export interface ResourceDemand {
   capacity: number;
   bookings: number;
   minutesBooked: number;
+  /** Average use over the period (0..1). */
   utilization: number;
+  /** How full it was at its busiest moment (0..1). */
+  peakUtilization: number;
   capacityDenials: number;
   demandLevel: 'HIGH' | 'MODERATE' | 'LOW';
+  /** Which rule set the level; null when LOW. */
+  demandReason: 'TURNED_AWAY' | 'UTILIZATION' | null;
+}
+
+/** Average-use ratios at which a resource counts as high or moderate demand. */
+export interface DemandThresholds {
+  high: number;
+  moderate: number;
 }
 
 export interface Meta {

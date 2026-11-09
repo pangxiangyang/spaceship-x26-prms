@@ -171,10 +171,13 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
   7-day trend.
 - **Aggregated reports.** Usage grouped by the tier **held at booking time**, so a later
   upgrade doesn't rewrite history.
-- **Usage analytics.** Per-resource utilisation (booked seat-minutes ÷ available
-  seat-minutes) plus the number of passengers **turned away because it was full**. Any
-  turn-away marks a resource as HIGH demand, which is the earliest shortage signal. In the demo
-  data, the two-seat Luxury O2 Pod is flagged this way.
+- **Usage analytics.** For each resource: **average use** (booked seat-minutes ÷ available
+  seat-minutes), **peak use** (how full it got at its busiest moment), and the number of
+  passengers **turned away because it was full**. Any turn-away marks a resource as HIGH
+  demand, which is the earliest shortage signal, and the report says which rule set each
+  level. In the demo data, the two-seat Luxury O2 Pod shows how average use can mislead: it
+  is full every afternoon (100% peak) and turns a third passenger away, yet its average over
+  the week is about 7% because it is empty at night.
 
 ---
 
@@ -202,7 +205,7 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 ```
 
 Dependencies point inward. The domain knows nothing about HTTP, Express, React, JWTs or
-Firestore, so it can be tested quickly and in isolation (132 tests run in about 1.5 s). Adding
+Firestore, so it can be tested quickly and in isolation (134 tests run in about 1.5 s). Adding
 Firestore didn't change a single domain service. It only needed new adapters for the
 existing ports.
 
@@ -237,7 +240,7 @@ Errors share one shape: `{ "error": { "code": "CAPACITY_EXCEEDED", "message": "�
 | `GET /api/admin/crew-leads`                  | crew       | The three Crew Leads                        |
 | `GET /api/admin/audit`                       | crew       | Filter by action/outcome/actor/subject/time |
 | `GET /api/admin/reports/tier-usage`          | crew       | Usage grouped by tier                       |
-| `GET /api/admin/reports/resource-demand`     | crew       | Utilisation, turn-aways, demand level       |
+| `GET /api/admin/reports/resource-demand`     | crew       | Average/peak use, turn-aways, demand level  |
 
 Status codes: `400` invalid input · `401` not signed in, or the account no longer exists ·
 `403` role or tier not allowed · `404` unknown · `409` conflicts with current state (full,
@@ -249,9 +252,9 @@ overlapping, wrong state, duplicate username) · `429` too many sign-in attempts
 
 | Suite  | Tests | Style                                                                     |
 | ------ | ----- | ------------------------------------------------------------------------- |
-| domain | 132   | Unit and service tests with a controllable clock, no mocks of the domain  |
+| domain | 134   | Unit and service tests with a controllable clock, no mocks of the domain  |
 | api    | 61    | Integration tests over real HTTP (supertest) and a storage contract suite |
-| web    | 14    | API client, formatting rules, login and role-based routing                |
+| web    | 15    | API client, formatting rules, login and role-based routing                |
 
 The domain was built test-first, level by level (see the commit history). Domain coverage
 is about 98% of lines.

@@ -51,10 +51,9 @@ places per 15-minute block would keep the UI simple.
   `ReportService.resourceDemand(actor, period, thresholds)`. The API simply uses the defaults.
   The next step is to read them from configuration, or from a Crew Lead "ship settings" page
   stored in Firestore, with every change audited.
-- The web client repeats two of these values (the 15-minute check-in window and the "75%" in
-  the report's explanation) instead of reading them from `GET /api/meta`, which already
-  returns the booking policy. The client should take both from the API so the server stays the
-  single source.
+- The demand report now returns the thresholds it used, and the page explains the levels with
+  them. The web client still repeats one value, the 15-minute check-in window, instead of
+  reading it from `GET /api/meta`, which already returns the booking policy.
 
 ## Operations
 

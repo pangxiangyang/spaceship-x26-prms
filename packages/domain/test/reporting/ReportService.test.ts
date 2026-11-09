@@ -178,14 +178,64 @@ describe('ReportService', () => {
       );
 
       expect(report.map((r) => r.resourceId)).toEqual([o2.id, gym.id, idle.id]);
-      expect(report[0]).toMatchObject({ utilization: 1, capacityDenials: 1, demandLevel: 'HIGH' });
+      expect(report[0]).toMatchObject({
+        utilization: 1,
+        peakUtilization: 1,
+        capacityDenials: 1,
+        demandLevel: 'HIGH',
+        demandReason: 'TURNED_AWAY',
+      });
       expect(report[1]).toMatchObject({
         bookings: 1,
         minutesBooked: 60,
         utilization: 0.125,
+        peakUtilization: 0.25,
         demandLevel: 'LOW',
+        demandReason: null,
       });
-      expect(report[2]).toMatchObject({ bookings: 0, utilization: 0, demandLevel: 'LOW' });
+      expect(report[2]).toMatchObject({
+        bookings: 0,
+        utilization: 0,
+        peakUtilization: 0,
+        demandLevel: 'LOW',
+        demandReason: null,
+      });
+    });
+
+    it('reports peak use separately from average use', async () => {
+      // Full every afternoon, empty the rest of the day: a low average hides a full peak.
+      const pod = await ctx.addResource({ capacity: 2 });
+      const a = await ctx.addPassenger('SILVER');
+      const b = await ctx.addPassenger('SILVER');
+      await ctx.domain.bookings.book(a.actor, { resourceId: pod.id, start: at(0), end: at(120) });
+      await ctx.domain.bookings.book(b.actor, { resourceId: pod.id, start: at(60), end: at(120) });
+
+      const [row] = await ctx.domain.reports.resourceDemand(
+        ctx.crewLead,
+        TimeSlot.of(at(0), at(DAY)),
+      );
+
+      // (120 + 60) booked seat-minutes / (2 seats * 1440 minutes) = 6.25%
+      expect(row).toMatchObject({ utilization: 0.0625, peakUtilization: 1 });
+    });
+
+    it('explains a high or moderate level that comes from average use', async () => {
+      const busy = await ctx.addResource({ name: 'Busy', capacity: 1 });
+      const steady = await ctx.addResource({ name: 'Steady', capacity: 2 });
+      const a = await ctx.addPassenger('SILVER');
+      const b = await ctx.addPassenger('SILVER');
+      await ctx.domain.bookings.book(a.actor, { resourceId: busy.id, start: at(0), end: at(60) });
+      await ctx.domain.bookings.book(b.actor, { resourceId: steady.id, start: at(0), end: at(60) });
+
+      const report = await ctx.domain.reports.resourceDemand(
+        ctx.crewLead,
+        TimeSlot.of(at(0), at(60)),
+      );
+
+      expect(report.map((r) => [r.resourceName, r.demandLevel, r.demandReason])).toEqual([
+        ['Busy', 'HIGH', 'UTILIZATION'],
+        ['Steady', 'MODERATE', 'UTILIZATION'],
+      ]);
     });
 
     it('treats any turned-away request as high demand even at low utilisation', async () => {
@@ -202,7 +252,7 @@ describe('ReportService', () => {
         TimeSlot.of(at(0), at(DAY)),
       );
       expect(row?.utilization).toBeLessThan(0.4);
-      expect(row?.demandLevel).toBe('HIGH');
+      expect(row).toMatchObject({ demandLevel: 'HIGH', demandReason: 'TURNED_AWAY' });
     });
 
     it('rejects periods longer than 90 days', async () => {

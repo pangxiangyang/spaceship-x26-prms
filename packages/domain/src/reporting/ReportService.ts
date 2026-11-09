@@ -1,7 +1,7 @@
 import type { AuditLog } from '../audit/AuditLog';
 import type { Booking, BookingLifecycle } from '../bookings/Booking';
 import type { BookingRepository } from '../bookings/BookingRepository';
-import { TimeSlot } from '../bookings/TimeSlot';
+import { TimeSlot, peakConcurrency } from '../bookings/TimeSlot';
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertSelfOrCrewLead } from '../identity/authorization';
 import { ALL_TIERS, type MembershipTier } from '../membership/MembershipTier';
@@ -64,6 +64,9 @@ export interface TierUsage {
 
 export type DemandLevel = 'HIGH' | 'MODERATE' | 'LOW';
 
+/** Which rule set the demand level: refused requests, or average use. Null when LOW. */
+export type DemandReason = 'TURNED_AWAY' | 'UTILIZATION' | null;
+
 export interface ResourceDemand {
   resourceId: string;
   resourceName: string;
@@ -72,11 +75,17 @@ export interface ResourceDemand {
   capacity: number;
   bookings: number;
   minutesBooked: number;
-  /** Booked seat-minutes divided by available seat-minutes in the period (0..1). */
+  /** Average use: booked seat-minutes divided by available seat-minutes in the period (0..1). */
   utilization: number;
+  /**
+   * Peak use: the most places in use at any one moment, divided by capacity (0..1). A resource
+   * that is full every afternoon and empty at night has a low average but a peak of 1.
+   */
+  peakUtilization: number;
   /** Booking requests refused because the resource was full. */
   capacityDenials: number;
   demandLevel: DemandLevel;
+  demandReason: DemandReason;
 }
 
 export interface DemandThresholds {
@@ -212,7 +221,13 @@ export class ReportService {
         const own = bookings.filter((b) => b.resourceId === resource.id);
         const minutesBooked = sum(own.map((b) => clippedMinutes(b, period)));
         const utilization = minutesBooked / (resource.capacity * period.durationMinutes);
+        const peakUtilization =
+          peakConcurrency(
+            own.map((b) => b.slot),
+            period,
+          ) / resource.capacity;
         const capacityDenials = denials.get(resource.id) ?? 0;
+        const { level, reason } = assessDemand(utilization, capacityDenials, thresholds);
         return {
           resourceId: resource.id,
           resourceName: resource.name,
@@ -222,8 +237,10 @@ export class ReportService {
           bookings: own.length,
           minutesBooked,
           utilization: round(utilization, 4),
+          peakUtilization: round(peakUtilization, 4),
           capacityDenials,
-          demandLevel: demandLevel(utilization, capacityDenials, thresholds),
+          demandLevel: level,
+          demandReason: reason,
           active: resource.isActive,
         };
       })
@@ -277,10 +294,20 @@ function clippedMinutes(booking: Booking, period: TimeSlot): number {
   return booking.slot.clampTo(period)?.durationMinutes ?? 0;
 }
 
-function demandLevel(utilization: number, denials: number, t: DemandThresholds): DemandLevel {
-  if (denials > 0 || utilization >= t.high) return 'HIGH';
-  if (utilization >= t.moderate) return 'MODERATE';
-  return 'LOW';
+/**
+ * A refused request is the clearest shortage signal, so it outranks average use: a
+ * resource that turns people away at its busy hour is in short supply, however idle it
+ * is overnight.
+ */
+function assessDemand(
+  utilization: number,
+  denials: number,
+  t: DemandThresholds,
+): { level: DemandLevel; reason: DemandReason } {
+  if (denials > 0) return { level: 'HIGH', reason: 'TURNED_AWAY' };
+  if (utilization >= t.high) return { level: 'HIGH', reason: 'UTILIZATION' };
+  if (utilization >= t.moderate) return { level: 'MODERATE', reason: 'UTILIZATION' };
+  return { level: 'LOW', reason: null };
 }
 
 function dailyUsage(bookings: Booking[], now: Date): DailyUsage[] {

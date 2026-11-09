@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,6 +115,55 @@ describe('App', () => {
   it('keeps passengers out of admin pages', async () => {
     renderApp('/admin/passengers', passenger, { '/api/resources': { resources: [] } });
     expect(await screen.findByRole('heading', { name: 'Ship resources' })).toBeInTheDocument();
+  });
+
+  it('explains why a resource is in high demand, using the server thresholds', async () => {
+    const period = { from: '2026-03-01T00:00:00Z', to: '2026-03-08T00:00:00Z' };
+    const row = {
+      category: 'OXYGEN',
+      minTier: 'PLATINUM',
+      capacity: 2,
+      bookings: 12,
+      minutesBooked: 1440,
+    };
+    renderApp('/admin/reports', crewLead, {
+      '/api/admin/reports/tier-usage': { period, tiers: [] },
+      '/api/admin/reports/resource-demand': {
+        period,
+        thresholds: { high: 0.8, moderate: 0.5 },
+        resources: [
+          {
+            ...row,
+            resourceId: 'r1',
+            resourceName: 'Luxury O2 Pod',
+            utilization: 0.0714,
+            peakUtilization: 1,
+            capacityDenials: 6,
+            demandLevel: 'HIGH',
+            demandReason: 'TURNED_AWAY',
+          },
+          {
+            ...row,
+            resourceId: 'r2',
+            resourceName: 'Fitness Center',
+            utilization: 0.85,
+            peakUtilization: 1,
+            capacityDenials: 0,
+            demandLevel: 'HIGH',
+            demandReason: 'UTILIZATION',
+          },
+        ],
+      },
+    });
+
+    const o2 = (await screen.findByText('Luxury O2 Pod', { selector: 'td' })).closest('tr')!;
+    expect(within(o2).getByText('7%')).toBeInTheDocument();
+    expect(within(o2).getByText('100%')).toBeInTheDocument();
+    expect(within(o2).getByText('High · 6 turned away')).toBeInTheDocument();
+    const gym = screen.getByText('Fitness Center', { selector: 'td' }).closest('tr')!;
+    expect(within(gym).getByText('High · 85% average use')).toBeInTheDocument();
+    expect(screen.getByText(/average use reaches 80%/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Luxury O2 Pod (6 turned away)');
   });
 
   it('lands crew leads in the admin module', async () => {
