@@ -89,7 +89,8 @@ swapped, and where the user experience could improve. What I took away:
 
 - **Layers.** The business rules live in `packages/domain` and know nothing about HTTP or
   storage. The API and the web app sit on top, and storage plugs in behind repository
-  interfaces. Adding Firestore showed this works: the domain services did not change.
+  interfaces. Adding Firestore showed this works: when it was added, the domain services
+  did not change.
 - **New booking rules.** `BookingService.book` runs its checks in order: slot limits, tier
   access, the passenger's own overlapping bookings, then capacity. A new restriction, such as
   a daily limit per passenger, would be one more check there. A refusal from it would be

@@ -9,6 +9,7 @@ import { AuthService } from '../auth/AuthService';
 import { BcryptPasswordHasher, type PasswordHasher } from '../auth/PasswordHasher';
 import { JwtTokenService, type TokenService } from '../auth/TokenService';
 import type { AppConfig } from '../config';
+import { jsonLogger, type Logger } from '../http/logger';
 import { createPersistence } from '../persistence/createPersistence';
 import type { Persistence } from '../persistence/Persistence';
 import { OffsetClock } from './OffsetClock';
@@ -26,6 +27,8 @@ export interface ContainerOverrides {
   clock?: Clock;
   ids?: IdGenerator;
   hasher?: PasswordHasher;
+  /** Where operational problems are reported. Defaults to JSON lines on stdout/stderr. */
+  logger?: Logger;
   /** Overrides individual booking rules (the defaults apply otherwise). */
   bookingPolicy?: Partial<BookingPolicy>;
   /** Defaults to the storage named in the configuration. */
@@ -43,11 +46,17 @@ export async function createContainer(
 ): Promise<AppContainer> {
   const persistence = overrides.persistence ?? createPersistence(config.storage);
   const clock = new OffsetClock(overrides.clock);
+  const logger = overrides.logger ?? jsonLogger;
   const domain = createPrmsDomain({
     storage: persistence,
     clock,
     ...(overrides.ids ? { ids: overrides.ids } : {}),
     ...(overrides.bookingPolicy ? { bookingPolicy: overrides.bookingPolicy } : {}),
+    onAuditFailure: (error, attempt) =>
+      logger.error('Could not record a refused attempt in the audit trail', {
+        ...attempt,
+        error: error instanceof Error ? error.message : String(error),
+      }),
   });
   const tokens = new JwtTokenService(config.jwtSecret, config.tokenTtlSeconds);
   const hasher = overrides.hasher ?? new BcryptPasswordHasher(config.bcryptCost);

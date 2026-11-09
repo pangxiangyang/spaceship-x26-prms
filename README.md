@@ -214,8 +214,8 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 
 Dependencies point inward. The domain knows nothing about HTTP, Express, React, JWTs or
 Firestore, so it can be tested quickly and in isolation (145 tests run in about 1.5 s). Adding
-Firestore didn't change a single domain service. It only needed new adapters for the
-existing ports.
+Firestore needed only new adapters for the existing ports. Making bookings safe across
+processes later added a unit-of-work port, which every service now uses.
 
 Design decisions, the patterns used and why, and the trade-offs are written up in
 **[docs/DESIGN.md](docs/DESIGN.md)**. Every interpretation of the brief is listed in

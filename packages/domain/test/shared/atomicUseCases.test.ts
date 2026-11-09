@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPrmsDomain } from '../../src/createPrmsDomain';
+import { TierAccessDeniedError } from '../../src/shared/errors';
 import type { PrmsStorage, Transaction } from '../../src/shared/UnitOfWork';
 import { FixedClock } from '../support/FixedClock';
 import { SequentialIds } from '../support/SequentialIds';
@@ -80,5 +81,33 @@ describe('use cases are all-or-nothing', () => {
     expect((await ctx.stored.user(passenger.id)).toSnapshot().tier).toBe('PLATINUM');
     const bookings = await ctx.repositories.bookings.findByPassenger(passenger.id);
     expect(bookings.map((b) => b.status)).toEqual(['CONFIRMED', 'CONFIRMED']);
+  });
+
+  it('keeps the business refusal when its audit record cannot be written', async () => {
+    const platinum = await ctx.addResource({ name: 'O2', category: 'OXYGEN', minTier: 'PLATINUM' });
+    const { actor } = await ctx.addPassenger('SILVER');
+    const onAuditFailure = vi.fn();
+    const storageDown = new Error('audit store unavailable');
+    const domain = createPrmsDomain({
+      storage: withFaults(ctx.storage, (tx) => ({
+        ...tx,
+        auditLog: {
+          append: async () => {
+            throw storageDown;
+          },
+        },
+      })),
+      clock: new FixedClock(NOW),
+      onAuditFailure,
+    });
+
+    // The passenger is told why they were refused, not that storage failed.
+    await expect(
+      domain.bookings.book(actor, { resourceId: platinum.id, start: at(60), end: at(90) }),
+    ).rejects.toThrow(TierAccessDeniedError);
+    expect(onAuditFailure).toHaveBeenCalledWith(
+      storageDown,
+      expect.objectContaining({ action: 'BOOKING_CREATE', reason: 'TIER_ACCESS_DENIED' }),
+    );
   });
 });

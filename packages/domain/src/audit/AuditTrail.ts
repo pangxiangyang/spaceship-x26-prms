@@ -22,6 +22,15 @@ export interface AuditRecordInput {
 
 export type TrackedOperation = Omit<AuditRecordInput, 'outcome'>;
 
+/**
+ * Told when the audit record of a refused attempt could not be written. The refusal still
+ * reaches the caller; this is how the failure gets noticed (the API logs it).
+ */
+export type AuditFailureHandler = (
+  error: unknown,
+  attempt: { action: AuditAction; actorId: string; reason: string },
+) => void;
+
 /** What a successful operation wants to add to its audit event. */
 export interface AuditOutcomeDetails {
   subjectId?: string;
@@ -37,6 +46,7 @@ export class AuditTrail {
     private readonly unitOfWork: UnitOfWork,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
+    private readonly onAuditFailure: AuditFailureHandler = () => {},
   ) {}
 
   /** Appends an event as part of `tx`, so it commits (or not) with the change it describes. */
@@ -55,7 +65,8 @@ export class AuditTrail {
    * Runs `work` in one unit of work and records exactly one audit event for it. On
    * success the SUCCESS event commits in the same unit of work as the change, so a change
    * can never exist without its record. A business-rule refusal changes nothing, so its
-   * DENIED event (with the rule's code) is written afterwards on its own. Infrastructure
+   * DENIED event (with the rule's code) is written afterwards on its own; if that write
+   * fails, `onAuditFailure` is told and the refusal is still thrown. Infrastructure
    * failures are not business events: they go to the structured logs, not the trail.
    */
   async track<T>(
@@ -77,11 +88,20 @@ export class AuditTrail {
       });
     } catch (error) {
       if (error instanceof DomainError) {
-        await this.record({
-          ...operation,
-          outcome: 'DENIED',
-          details: { ...operation.details, reason: error.code, message: error.message },
-        });
+        try {
+          await this.record({
+            ...operation,
+            outcome: 'DENIED',
+            details: { ...operation.details, reason: error.code, message: error.message },
+          });
+        } catch (auditError) {
+          // The caller still gets the business reason (a 403 or 409), not a storage error.
+          this.onAuditFailure(auditError, {
+            action: operation.action,
+            actorId: operation.actor.userId,
+            reason: error.code,
+          });
+        }
       }
       throw error;
     }

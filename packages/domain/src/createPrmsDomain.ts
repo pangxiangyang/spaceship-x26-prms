@@ -1,5 +1,5 @@
 import { AuditService } from './audit/AuditService';
-import { AuditTrail } from './audit/AuditTrail';
+import { AuditTrail, type AuditFailureHandler } from './audit/AuditTrail';
 import { DEFAULT_BOOKING_POLICY, type BookingPolicy } from './bookings/BookingPolicy';
 import { BookingRevocation } from './bookings/BookingRevocation';
 import { BookingService } from './bookings/BookingService';
@@ -15,6 +15,8 @@ export interface PrmsDomainOptions {
   clock?: Clock;
   ids?: IdGenerator;
   bookingPolicy?: Partial<BookingPolicy>;
+  /** Told when a refused attempt's audit record could not be written (e.g. to log it). */
+  onAuditFailure?: AuditFailureHandler;
 }
 
 /**
@@ -45,7 +47,7 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
 
   // Every change runs in a unit of work of the storage, which also isolates it from
   // changes made by other processes; the audit trail writes inside the same unit.
-  const auditTrail = new AuditTrail(unitOfWork, clock, ids);
+  const auditTrail = new AuditTrail(unitOfWork, clock, ids, options.onAuditFailure);
   const revocation = new BookingRevocation(auditTrail, clock);
   const shared = { ...repositories, audit: auditTrail, ids, clock, revocation };
 
