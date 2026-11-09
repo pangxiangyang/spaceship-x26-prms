@@ -131,6 +131,24 @@ describe('admin module (Crew Leads)', () => {
       .expect(400);
   });
 
+  it('pages through the audit trail with an opaque cursor', async () => {
+    const { api, crewToken, auth } = await createTestApp();
+    const page = (query: Record<string, string | number>) =>
+      api.get('/api/admin/audit').query(query).set(auth(crewToken));
+
+    // Start-up registered three Crew Leads, so the trail already holds three events.
+    const first = await page({ limit: 2 }).expect(200);
+    expect(first.body).toMatchObject({ total: 3, nextCursor: expect.any(String) });
+    expect(first.body.events).toHaveLength(2);
+
+    const second = await page({ limit: 2, cursor: first.body.nextCursor }).expect(200);
+    expect(second.body).toMatchObject({ total: 3, nextCursor: null });
+    expect(second.body.events).toHaveLength(1);
+
+    const bad = await page({ cursor: 'not-a-cursor' }).expect(400);
+    expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
   it('serves tier usage and resource demand reports for a period', async () => {
     const { api, clock, crewToken, auth, createPassenger, createResource } = await createTestApp();
     const pod = await createResource({ capacity: 1 });

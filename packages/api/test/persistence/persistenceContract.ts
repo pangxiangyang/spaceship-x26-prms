@@ -194,9 +194,39 @@ export function describePersistenceContract(
         );
         const ids = (list: { id: string }[]) => list.map((b) => b.id).sort();
         expect(ids(await bookings.findByPassenger('pax-1'))).toEqual(['b-1', 'b-2']);
-        expect(ids(await bookings.findByResource('res-1'))).toEqual(['b-1', 'b-3']);
+        const allDay = TimeSlot.of(at('00:00'), at('23:59'));
+        expect(ids(await bookings.findByResource('res-1', allDay))).toEqual(['b-1', 'b-3']);
         expect(await bookings.findAll()).toHaveLength(3);
         expect(await bookings.findById('missing')).toBeUndefined();
+      });
+
+      it('finds bookings overlapping a window, by resource, by passenger and overall', async () => {
+        const { bookings } = store.repositories;
+        const timed = (id: string, pax: string, res: string, from: string, to: string) =>
+          Booking.create({
+            id,
+            passengerId: pax,
+            resourceId: res,
+            passengerTier: 'GOLD',
+            slot: TimeSlot.of(at(from), at(to)),
+            createdAt: at('07:00'),
+          });
+        await bookings.save(timed('b-early', 'pax-1', 'res-1', '08:00', '09:00'));
+        await bookings.save(timed('b-mid', 'pax-1', 'res-1', '10:00', '11:00'));
+        await bookings.save(timed('b-late', 'pax-2', 'res-1', '12:00', '13:00'));
+        await bookings.save(timed('b-other', 'pax-2', 'res-2', '10:30', '11:30'));
+        // Half-open: b-early ends as the window starts, b-late starts as it ends.
+        const window = TimeSlot.of(at('09:00'), at('12:00'));
+
+        const ids = (list: { id: string }[]) => list.map((b) => b.id).sort();
+        expect(ids(await bookings.findByResource('res-1', window))).toEqual(['b-mid']);
+        expect(ids(await bookings.findByPassenger('pax-1', window))).toEqual(['b-mid']);
+        expect(ids(await bookings.findByPassenger('pax-1'))).toEqual(['b-early', 'b-mid']);
+        expect(ids(await bookings.findOverlapping(window))).toEqual(['b-mid', 'b-other']);
+        expect(ids(await bookings.findOverlapping(TimeSlot.onwardsFrom(at('11:15'))))).toEqual([
+          'b-late',
+          'b-other',
+        ]);
       });
 
       it('persists state transitions', async () => {
@@ -246,8 +276,42 @@ export function describePersistenceContract(
         expect(await ids({ actorId: 'crew-1' })).toEqual(['e-2']);
         expect(await ids({ subjectId: 'res-1', outcome: 'SUCCESS' })).toEqual(['e-1']);
         expect(await ids({ from: at('09:05'), to: at('09:10') })).toEqual(['e-3', 'e-2']);
-        expect(await ids({ limit: 2, offset: 1 })).toEqual(['e-3', 'e-2']);
-        expect((await auditLog.query({ limit: 2, offset: 1 })).total).toBe(4);
+        expect(
+          await ids({ action: 'BOOKING_CREATE', outcome: 'SUCCESS', actorId: 'pax-1' }),
+        ).toEqual(['e-4', 'e-1']);
+      });
+
+      it('filters by the business rule that refused an attempt', async () => {
+        const { auditLog } = store.repositories;
+        const ids = async (query: AuditQuery) =>
+          (await auditLog.query(query)).items.map((e) => e.id);
+        expect(await ids({ reason: 'CAPACITY_EXCEEDED' })).toEqual(['e-3']);
+        expect(
+          await ids({
+            action: 'BOOKING_CREATE',
+            outcome: 'DENIED',
+            reason: 'CAPACITY_EXCEEDED',
+            from: at('09:00'),
+            to: at('09:30'),
+          }),
+        ).toEqual(['e-3']);
+      });
+
+      it('pages with a cursor, newest first, with the total on every page', async () => {
+        const { auditLog } = store.repositories;
+        // Same moment as e-4: the id breaks the tie, so no event is skipped or repeated.
+        await auditLog.append(event('e-5', '09:15'));
+
+        const first = await auditLog.query({ limit: 2 });
+        const second = await auditLog.query({ limit: 2, after: first.nextCursor! });
+        const third = await auditLog.query({ limit: 2, after: second.nextCursor! });
+
+        expect(first.items.map((e) => e.id)).toEqual(['e-5', 'e-4']);
+        expect(second.items.map((e) => e.id)).toEqual(['e-3', 'e-2']);
+        expect(third.items.map((e) => e.id)).toEqual(['e-1']);
+        expect([first.total, second.total, third.total]).toEqual([5, 5, 5]);
+        expect(third.nextCursor).toBeNull();
+        expect((await auditLog.query({ limit: 5 })).nextCursor).toBeNull();
       });
     });
 
@@ -322,7 +386,10 @@ export function describePersistenceContract(
             code: 'CAPACITY_EXCEEDED',
           });
         }
-        const stored = await store.repositories.bookings.findByResource(pod.id);
+        const stored = await store.repositories.bookings.findByResource(
+          pod.id,
+          TimeSlot.of(slot.start, slot.end),
+        );
         expect(stored.filter((b) => b.occupiesCapacity)).toHaveLength(3);
       });
     });

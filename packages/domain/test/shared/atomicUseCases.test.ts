@@ -61,8 +61,9 @@ describe('use cases are all-or-nothing', () => {
       bookings: {
         ...tx.bookings,
         findById: (id) => tx.bookings.findById(id),
-        findByPassenger: (id) => tx.bookings.findByPassenger(id),
-        findByResource: (id) => tx.bookings.findByResource(id),
+        findByPassenger: (id, window) => tx.bookings.findByPassenger(id, window),
+        findByResource: (id, window) => tx.bookings.findByResource(id, window),
+        findOverlapping: (window) => tx.bookings.findOverlapping(window),
         findAll: () => tx.bookings.findAll(),
         save: async (booking) => {
           saves += 1;

@@ -1,6 +1,7 @@
 import type { AuditEvent } from '../../audit/AuditEvent';
 import {
   matchesAuditQuery,
+  newestFirst,
   paginate,
   type AuditLog,
   type AuditPage,
@@ -8,6 +9,7 @@ import {
 } from '../../audit/AuditLog';
 import { Booking, type BookingSnapshot } from '../../bookings/Booking';
 import type { BookingRepository } from '../../bookings/BookingRepository';
+import type { TimeSlot } from '../../bookings/TimeSlot';
 import { Role } from '../../identity/Actor';
 import { Resource, type ResourceSnapshot } from '../../resources/Resource';
 import type { ResourceRepository } from '../../resources/ResourceRepository';
@@ -204,12 +206,16 @@ class MemoryBookings implements BookingRepository {
     return row && Booking.restore(row);
   }
 
-  async findByPassenger(passengerId: string): Promise<Booking[]> {
-    return this.where((b) => b.passengerId === passengerId);
+  async findByPassenger(passengerId: string, window?: TimeSlot): Promise<Booking[]> {
+    return this.where((b) => b.passengerId === passengerId && (!window || overlaps(b, window)));
   }
 
-  async findByResource(resourceId: string): Promise<Booking[]> {
-    return this.where((b) => b.resourceId === resourceId);
+  async findByResource(resourceId: string, window: TimeSlot): Promise<Booking[]> {
+    return this.where((b) => b.resourceId === resourceId && overlaps(b, window));
+  }
+
+  async findOverlapping(window: TimeSlot): Promise<Booking[]> {
+    return this.where((b) => overlaps(b, window));
   }
 
   async findAll(): Promise<Booking[]> {
@@ -229,6 +235,10 @@ class MemoryBookings implements BookingRepository {
   }
 }
 
+/** Half-open, like `TimeSlot.overlaps`. */
+const overlaps = (row: BookingSnapshot, window: TimeSlot) =>
+  row.start < window.end && window.start < row.end;
+
 class MemoryAuditLog implements AuditLog {
   constructor(
     private readonly tables: () => Tables,
@@ -247,9 +257,7 @@ class MemoryAuditLog implements AuditLog {
   }
 
   async query(query: AuditQuery): Promise<AuditPage> {
-    const newestFirst = this.tables()
-      .auditEvents.filter((e) => matchesAuditQuery(e, query))
-      .reverse();
-    return paginate(newestFirst, query);
+    const matching = this.tables().auditEvents.filter((e) => matchesAuditQuery(e, query));
+    return paginate(matching.sort(newestFirst), query);
   }
 }

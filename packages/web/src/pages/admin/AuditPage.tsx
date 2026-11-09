@@ -21,18 +21,24 @@ const PAGE_SIZE = 50;
 export function AuditPage() {
   const [action, setAction] = useState('');
   const [outcome, setOutcome] = useState('');
-  const [page, setPage] = useState(0);
+  // The server pages with cursors: keep the cursor of every page opened so far, so
+  // "Newer" can go back. An empty stack is the first (newest) page.
+  const [cursors, setCursors] = useState<string[]>([]);
+  const cursor = cursors[cursors.length - 1];
+  const page = cursors.length;
   const { data, error, loading } = useApiData(
     (api) =>
-      api.get<{ total: number; events: AuditEvent[] }>('/api/admin/audit', {
-        action,
-        outcome,
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-      }),
-    [action, outcome, page],
+      api.get<{ total: number; nextCursor: string | null; events: AuditEvent[] }>(
+        '/api/admin/audit',
+        { action, outcome, limit: PAGE_SIZE, cursor },
+      ),
+    [action, outcome, cursor],
   );
   const pages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
+  const filterBy = (set: (value: string) => void) => (value: string) => {
+    set(value);
+    setCursors([]);
+  };
 
   return (
     <>
@@ -43,13 +49,7 @@ export function AuditPage() {
       <div className="filters">
         <label>
           Action
-          <select
-            value={action}
-            onChange={(e) => {
-              setAction(e.target.value);
-              setPage(0);
-            }}
-          >
+          <select value={action} onChange={(e) => filterBy(setAction)(e.target.value)}>
             <option value="">All actions</option>
             {ACTIONS.map((a) => (
               <option key={a} value={a}>
@@ -60,13 +60,7 @@ export function AuditPage() {
         </label>
         <label>
           Outcome
-          <select
-            value={outcome}
-            onChange={(e) => {
-              setOutcome(e.target.value);
-              setPage(0);
-            }}
-          >
+          <select value={outcome} onChange={(e) => filterBy(setOutcome)(e.target.value)}>
             <option value="">Any outcome</option>
             <option value="SUCCESS">Success</option>
             <option value="DENIED">Denied</option>
@@ -124,7 +118,7 @@ export function AuditPage() {
             type="button"
             className="button ghost small"
             disabled={page === 0}
-            onClick={() => setPage(page - 1)}
+            onClick={() => setCursors(cursors.slice(0, -1))}
           >
             ← Newer
           </button>
@@ -134,8 +128,8 @@ export function AuditPage() {
           <button
             type="button"
             className="button ghost small"
-            disabled={page + 1 >= pages}
-            onClick={() => setPage(page + 1)}
+            disabled={!data.nextCursor}
+            onClick={() => data.nextCursor && setCursors([...cursors, data.nextCursor])}
           >
             Older →
           </button>

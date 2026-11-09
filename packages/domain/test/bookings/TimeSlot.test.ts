@@ -59,4 +59,14 @@ describe('peakConcurrency', () => {
     expect(peakConcurrency(slots, slot('10:00', '11:00'))).toBe(0);
     expect(peakConcurrency(slots, slot('09:45', '11:30'))).toBe(2);
   });
+
+  it('describes an open-ended window from a moment onwards', () => {
+    const now = new Date('2026-03-01T10:00:00Z');
+    const onwards = TimeSlot.onwardsFrom(now);
+    expect(onwards.overlaps(TimeSlot.of(now, new Date('2026-03-01T10:15:00Z')))).toBe(true);
+    expect(onwards.overlaps(TimeSlot.of(new Date('2099-01-01'), new Date('2099-01-02')))).toBe(
+      true,
+    );
+    expect(onwards.overlaps(TimeSlot.of(new Date('2026-03-01T09:00:00Z'), now))).toBe(false);
+  });
 });

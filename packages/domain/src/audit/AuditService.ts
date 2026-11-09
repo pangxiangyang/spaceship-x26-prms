@@ -1,6 +1,6 @@
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead } from '../identity/authorization';
-import type { AuditLog, AuditPage, AuditQuery } from './AuditLog';
+import { decodeAuditCursor, type AuditLog, type AuditPage, type AuditQuery } from './AuditLog';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -12,7 +12,7 @@ export class AuditService {
   async list(actor: Actor, query: AuditQuery): Promise<AuditPage> {
     assertCrewLead(actor);
     const limit = Math.min(Math.max(Math.trunc(query.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
-    const offset = Math.max(Math.trunc(query.offset ?? 0), 0);
-    return this.log.query({ ...query, limit, offset });
+    if (query.after) decodeAuditCursor(query.after); // refuses a malformed cursor early
+    return this.log.query({ ...query, limit });
   }
 }

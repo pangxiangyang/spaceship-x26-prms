@@ -2,9 +2,9 @@ import { vi } from 'vitest';
 import { ApiClient } from '../../src/api/client';
 
 /**
- * An ApiClient whose server answers GET-style requests from `routes` (by path, read at
- * call time so a test can change an answer later). Sign-in always fails; posts to a path
- * listed in `routes` return that body.
+ * An ApiClient whose server answers requests from `routes` (by path, read at call time so
+ * a test can change an answer later). An answer may be a function of the request URL, to
+ * answer by query string. Sign-in always fails.
  */
 export function fakeApi(routes: Record<string, unknown>) {
   const fetchImpl = vi.fn(async (url: string) => {
@@ -17,7 +17,8 @@ export function fakeApi(routes: Record<string, unknown>) {
         { status: 401 },
       );
     }
-    const body = routes[path];
+    const route = routes[path];
+    const body = typeof route === 'function' ? route(new URL(url, 'http://ship.test')) : route;
     return body === undefined
       ? new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'nope' } }), {
           status: 404,

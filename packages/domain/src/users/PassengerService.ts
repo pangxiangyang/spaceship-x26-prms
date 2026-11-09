@@ -2,6 +2,7 @@ import type { AuditTrail } from '../audit/AuditTrail';
 import { CancellationReason } from '../bookings/Booking';
 import type { BookingRepository } from '../bookings/BookingRepository';
 import type { BookingRevocation } from '../bookings/BookingRevocation';
+import { TimeSlot } from '../bookings/TimeSlot';
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertSelfOrCrewLead } from '../identity/authorization';
 import type { MembershipTier } from '../membership/MembershipTier';
@@ -140,7 +141,8 @@ export class PassengerService {
   }
 
   private async revokeNoLongerAccessible(tx: Transaction, actor: Actor, passenger: Passenger) {
-    const bookings = await tx.bookings.findByPassenger(passenger.id);
+    const notEnded = TimeSlot.onwardsFrom(this.deps.clock.now());
+    const bookings = await tx.bookings.findByPassenger(passenger.id, notEnded);
     const resources = new Map(
       (await tx.resources.findAll()).map((resource) => [resource.id, resource]),
     );

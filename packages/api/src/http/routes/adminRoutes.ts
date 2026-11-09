@@ -52,7 +52,8 @@ const auditQuery = z.object({
   from: isoDateTime.optional(),
   to: isoDateTime.optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  offset: z.coerce.number().int().min(0).optional(),
+  /** The previous page's `nextCursor`. */
+  cursor: z.string().max(200).optional(),
 });
 
 const periodQuery = z.object({ from: isoDateTime.optional(), to: isoDateTime.optional() });
@@ -153,14 +154,18 @@ export function adminRoutes({ auth, domain }: AppContainer): Router {
   // Monitoring
   router.get('/audit', async (req, res) => {
     const actor = actorOf(res);
-    const query = parse(auditQuery, req.query);
+    const { cursor, ...filters } = parse(auditQuery, req.query);
     const [page, passengers, leads] = await Promise.all([
-      domain.audit.list(actor, query),
+      domain.audit.list(actor, { ...filters, ...(cursor ? { after: cursor } : {}) }),
       domain.passengers.list(actor),
       domain.crewLeads.list(actor),
     ]);
     const names = new Map([...passengers, ...leads].map((u) => [u.id, u.displayName]));
-    res.json({ total: page.total, events: page.items.map((e) => presentAuditEvent(e, names)) });
+    res.json({
+      total: page.total,
+      nextCursor: page.nextCursor,
+      events: page.items.map((e) => presentAuditEvent(e, names)),
+    });
   });
 
   router.get('/reports/tier-usage', async (req, res) => {

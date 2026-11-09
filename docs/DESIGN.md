@@ -127,10 +127,15 @@ Choices worth noting:
 - **Entities are rebuilt through the domain, not deserialised blindly.** `User`, `Resource`
   and `Booking` expose `toSnapshot()` and a restore function. `restore()` re-runs the entity's validation,
   so a corrupt document is rejected at the boundary instead of leaking into business logic.
-- **No index configuration to deploy.** Every query filters on a single field, which
-  Firestore serves from its automatic single-field indexes. The audit log pushes its most
-  selective filter to Firestore and applies the rest with the same `matchesAuditQuery`
-  function the in-memory store uses, so both behave identically.
+- **Queries cost what they return, not the size of the mission.** Firestore bills every
+  document read. Use cases always ask for bookings in a time window: one equality filter
+  plus `end > window.start`, with the start checked in memory (a booking lasts at most a few
+  hours). The audit log filters, orders and pages in the database, with a cursor rather
+  than an offset (skipped documents would still be billed), so a page costs about `limit`
+  reads plus one count. The composite indexes this needs are defined in
+  `deploy/firestore.indexes.json` and created by the deploy script, which waits until they
+  are built. The contract suite runs on the real project as well as the emulator, because
+  the emulator does not enforce indexes.
 - **Integrity in storage.** Username uniqueness and the Crew Lead limit are checked and
   written in the user's transaction. Audit events use `create()`, so an event can never be
   overwritten.

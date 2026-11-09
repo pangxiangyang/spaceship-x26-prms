@@ -2,6 +2,8 @@ import { ValidationError } from '../shared/errors';
 import { requireValidDate } from '../shared/validation';
 
 const MINUTE_MS = 60_000;
+/** The latest instant a JavaScript Date can hold. */
+const END_OF_TIME = new Date(8_640_000_000_000_000);
 
 /** A half-open time interval [start, end). Back-to-back slots do not overlap. */
 export class TimeSlot {
@@ -17,6 +19,11 @@ export class TimeSlot {
       throw new ValidationError('End time must be after start time.');
     }
     return new TimeSlot(new Date(start), new Date(end));
+  }
+
+  /** Everything from `start` on, e.g. "bookings that have not ended yet". */
+  static onwardsFrom(start: Date): TimeSlot {
+    return TimeSlot.of(start, END_OF_TIME);
   }
 
   get durationMinutes(): number {

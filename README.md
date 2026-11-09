@@ -292,8 +292,8 @@ follow-ups are described in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
   scaling out. See [docs/DESIGN.md](docs/DESIGN.md#concurrency-and-atomicity).
 - The demo reset deletes and reseeds one collection at a time, so a write made in those
   seconds can survive the reset. Accepted for a demo.
-- Audit and report queries filter part of the data in memory. That's fine for one ship, but
-  at scale it would need composite indexes, cursor paging and database-side aggregation.
+- Every authenticated request reads the user's document, so tokens of removed accounts are
+  rejected. A short-lived cache would save those reads if traffic grew.
 - Passwords are set by Crew Leads at creation. There's no self-service reset yet.
 - JWTs are stateless, so sign-out is client-side. Tokens stop working as soon as their
   account no longer exists, but a revocation list or refresh tokens would harden this further.

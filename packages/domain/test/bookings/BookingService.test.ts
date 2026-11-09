@@ -191,7 +191,10 @@ describe('BookingService', () => {
         ),
       );
       expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(3);
-      const stored = await ctx.repositories.bookings.findByResource(pod.id);
+      const stored = await ctx.repositories.bookings.findByResource(
+        pod.id,
+        TimeSlot.of(at(60), at(120)),
+      );
       expect(stored.filter((b) => b.occupiesCapacity)).toHaveLength(3);
     });
   });

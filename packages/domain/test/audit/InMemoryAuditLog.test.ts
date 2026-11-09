@@ -3,7 +3,7 @@ import { createInMemoryStorage } from '../../src/adapters/in-memory';
 import { AuditTrail } from '../../src/audit/AuditTrail';
 import { AuditService } from '../../src/audit/AuditService';
 import { Role } from '../../src/identity/Actor';
-import { ForbiddenError } from '../../src/shared/errors';
+import { ForbiddenError, ValidationError } from '../../src/shared/errors';
 import { FixedClock } from '../support/FixedClock';
 import { SequentialIds } from '../support/SequentialIds';
 
@@ -61,9 +61,15 @@ describe('audit log', () => {
     });
     expect(ranged.items.map((e) => e.id)).toEqual(['evt-2']);
 
-    const page = await service.list(crewLead, { limit: 1, offset: 1 });
+    const first = await service.list(crewLead, { limit: 1 });
+    const page = await service.list(crewLead, { limit: 1, after: first.nextCursor! });
     expect(page.items.map((e) => e.id)).toEqual(['evt-2']);
     expect(page.total).toBe(3);
+  });
+
+  it('refuses a malformed page cursor', async () => {
+    const { service } = await setup();
+    await expect(service.list(crewLead, { after: 'page-2' })).rejects.toThrow(ValidationError);
   });
 
   it('stores immutable events', async () => {

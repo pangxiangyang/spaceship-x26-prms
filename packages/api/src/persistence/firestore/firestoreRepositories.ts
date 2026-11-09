@@ -12,8 +12,8 @@ import {
   ConflictError,
   REQUIRED_CREW_LEAD_COUNT,
   Role,
-  matchesAuditQuery,
-  paginate,
+  decodeAuditCursor,
+  encodeAuditCursor,
   type AnyUser,
   type AuditEvent,
   type AuditLog,
@@ -26,6 +26,7 @@ import {
   type Resource,
   type ResourceRepository,
   type ScheduleLock,
+  type TimeSlot,
   type Transaction,
   type UnitOfWork,
   type UserRepository,
@@ -55,6 +56,9 @@ export interface FirestoreCollections {
   /** One document per resource or passenger schedule, written to serialise bookings. */
   scheduleLocks: CollectionReference;
 }
+
+/** Firestore's name for ordering by document id (`FieldPath.documentId()`). */
+const DOCUMENT_ID = '__name__';
 
 /** Runs a transaction again after a conflict, up to this many attempts in all. */
 const MAX_TRANSACTION_ATTEMPTS = 10;
@@ -262,12 +266,17 @@ export class FirestoreBookings implements BookingRepository {
     return snapshot.exists ? bookingFromDocument(snapshot.id, snapshot.data()!) : undefined;
   }
 
-  findByPassenger(passengerId: string): Promise<Booking[]> {
-    return this.list(this.c.bookings.where('passengerId', '==', passengerId));
+  findByPassenger(passengerId: string, window?: TimeSlot): Promise<Booking[]> {
+    const own = this.c.bookings.where('passengerId', '==', passengerId);
+    return window ? this.overlapping(own, window) : this.list(own);
   }
 
-  findByResource(resourceId: string): Promise<Booking[]> {
-    return this.list(this.c.bookings.where('resourceId', '==', resourceId));
+  findByResource(resourceId: string, window: TimeSlot): Promise<Booking[]> {
+    return this.overlapping(this.c.bookings.where('resourceId', '==', resourceId), window);
+  }
+
+  findOverlapping(window: TimeSlot): Promise<Booking[]> {
+    return this.overlapping(this.c.bookings, window);
   }
 
   findAll(): Promise<Booking[]> {
@@ -276,6 +285,16 @@ export class FirestoreBookings implements BookingRepository {
 
   save(booking: Booking): Promise<void> {
     return this.persist(booking);
+  }
+
+  /**
+   * Firestore allows a range filter on one field, so the query asks for bookings that end
+   * after the window starts (served by the `(…, end)` composite indexes) and the start is
+   * checked here. A booking lasts at most a few hours, so few extra documents are read.
+   */
+  private async overlapping(query: Query, window: TimeSlot): Promise<Booking[]> {
+    const endingAfterStart = await this.list(query.where('end', '>', window.start));
+    return endingAfterStart.filter((b) => b.slot.start < window.end);
   }
 
   private async list(query: Query): Promise<Booking[]> {
@@ -295,24 +314,46 @@ export class FirestoreAuditLog implements AuditLog {
   }
 
   /**
-   * Pushes the most selective equality filter down to Firestore and applies the
-   * rest in memory, with exactly the in-memory semantics.
+   * Firestore filters, orders and pages: a page costs about `limit` reads plus one count
+   * aggregation, however long the trail grows. Each filter has a composite index with
+   * `occurredAt` (deploy/firestore.indexes.json), and Firestore merges them when a query
+   * combines filters. A query without a limit (reports) reads exactly what matches.
    */
   async query(query: AuditQuery): Promise<AuditPage> {
-    const snapshot = await this.narrowestQuery(query).get();
-    const newestFirst = snapshot.docs
-      .map((doc) => auditEventFromDocument(doc.id, doc.data()))
-      .filter((event) => matchesAuditQuery(event, query))
-      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime() || b.id.localeCompare(a.id));
-    return paginate(newestFirst, query);
+    const filtered = this.filtered(query);
+    let page = filtered.orderBy('occurredAt', 'desc').orderBy(DOCUMENT_ID, 'desc');
+    if (query.after) {
+      const cursor = decodeAuditCursor(query.after);
+      page = page.startAfter(cursor.occurredAt, cursor.id);
+    }
+    if (query.limit === undefined) {
+      const items = (await page.get()).docs.map((d) => auditEventFromDocument(d.id, d.data()));
+      return { items, total: items.length, nextCursor: null };
+    }
+    const [snapshot, count] = await Promise.all([
+      page.limit(query.limit + 1).get(),
+      filtered.count().get(),
+    ]);
+    const events = snapshot.docs.map((d) => auditEventFromDocument(d.id, d.data()));
+    const items = events.slice(0, query.limit);
+    const last = items[items.length - 1];
+    return {
+      items,
+      total: count.data().count,
+      nextCursor: last && events.length > query.limit ? encodeAuditCursor(last) : null,
+    };
   }
 
-  private narrowestQuery(query: AuditQuery): Query {
-    if (query.subjectId) return this.events.where('subject.id', '==', query.subjectId);
-    if (query.actorId) return this.events.where('actor.userId', '==', query.actorId);
-    if (query.action) return this.events.where('action', '==', query.action);
-    if (query.outcome) return this.events.where('outcome', '==', query.outcome);
-    return this.events;
+  private filtered(query: AuditQuery): Query {
+    let q: Query = this.events;
+    if (query.action) q = q.where('action', '==', query.action);
+    if (query.outcome) q = q.where('outcome', '==', query.outcome);
+    if (query.actorId) q = q.where('actor.userId', '==', query.actorId);
+    if (query.subjectId) q = q.where('subject.id', '==', query.subjectId);
+    if (query.reason) q = q.where('reason', '==', query.reason);
+    if (query.from) q = q.where('occurredAt', '>=', query.from);
+    if (query.to) q = q.where('occurredAt', '<=', query.to);
+    return q;
   }
 }
 

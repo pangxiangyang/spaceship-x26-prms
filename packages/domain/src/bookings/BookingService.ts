@@ -154,8 +154,8 @@ export class BookingService {
       const passenger = await findPassengerOrThrow(this.deps.users, actor.userId);
       this.assertUsable(resource, passenger);
     }
-    const occupied = (await this.deps.bookings.findByResource(resourceId))
-      .filter((b) => b.occupiesCapacity && b.slot.overlaps(window))
+    const occupied = (await this.deps.bookings.findByResource(resourceId, window))
+      .filter((b) => b.occupiesCapacity)
       .map((b) => b.slot)
       .sort((a, b) => a.start.getTime() - b.start.getTime());
     return { resource, occupied };
@@ -195,8 +195,8 @@ export class BookingService {
     passengerId: string,
     slot: TimeSlot,
   ): Promise<void> {
-    const own = await tx.bookings.findByPassenger(passengerId);
-    if (own.some((b) => b.occupiesCapacity && b.slot.overlaps(slot))) {
+    const overlapping = await tx.bookings.findByPassenger(passengerId, slot);
+    if (overlapping.some((b) => b.occupiesCapacity)) {
       throw new ConflictError('BOOKING_OVERLAP', 'You already have a booking during this time.');
     }
   }
@@ -206,7 +206,7 @@ export class BookingService {
     resource: Resource,
     slot: TimeSlot,
   ): Promise<void> {
-    const existing = (await tx.bookings.findByResource(resource.id))
+    const existing = (await tx.bookings.findByResource(resource.id, slot))
       .filter((b) => b.occupiesCapacity)
       .map((b) => b.slot);
     if (peakConcurrency(existing, slot) >= resource.capacity) {

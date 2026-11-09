@@ -41,6 +41,26 @@ step "Firestore database"
 exists g firestore databases describe --database='(default)' ||
   g firestore databases create --database='(default)' --location="$REGION" --type=firestore-native
 
+step "Firestore indexes (deploy/firestore.indexes.json)"
+# Waits for each new index to finish building, so the new revision never runs a query whose
+# index is missing. Indexes that already exist are left as they are.
+index_args() {
+  node -e '
+    const { indexes } = require("./deploy/firestore.indexes.json");
+    for (const index of indexes) {
+      const fields = index.fields.map(
+        (f) => `--field-config=field-path=${f.fieldPath},order=${f.order.toLowerCase()}`,
+      );
+      console.log([`--collection-group=${index.collectionGroup}`, `--query-scope=${index.queryScope}`, ...fields].join(" "));
+    }'
+}
+while read -r args; do
+  # shellcheck disable=SC2086 # one word per gcloud flag
+  if ! out="$(g firestore indexes composite create --database='(default)' $args 2>&1)"; then
+    grep -qi "already exists" <<<"$out" || { echo "$out" >&2; exit 1; }
+  fi
+done < <(index_args)
+
 step "Artifact Registry repository"
 exists g artifacts repositories describe "$REPOSITORY" --location="$REGION" ||
   g artifacts repositories create "$REPOSITORY" --repository-format=docker \

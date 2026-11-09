@@ -261,9 +261,7 @@ export class ReportService {
   }
 
   private async bookingsIn(period: TimeSlot): Promise<Booking[]> {
-    return (await this.deps.bookings.findAll()).filter(
-      (b) => b.occupiesCapacity && b.slot.overlaps(period),
-    );
+    return (await this.deps.bookings.findOverlapping(period)).filter((b) => b.occupiesCapacity);
   }
 
   /** Counts CAPACITY_EXCEEDED denials whose requested slot overlaps the period. */

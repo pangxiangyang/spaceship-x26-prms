@@ -2,7 +2,7 @@ import type { AuditTrail } from '../audit/AuditTrail';
 import { CancellationReason } from '../bookings/Booking';
 import type { BookingRepository } from '../bookings/BookingRepository';
 import type { BookingRevocation } from '../bookings/BookingRevocation';
-import { peakConcurrency } from '../bookings/TimeSlot';
+import { TimeSlot, peakConcurrency } from '../bookings/TimeSlot';
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertPassenger } from '../identity/authorization';
 import { compareTiers } from '../membership/MembershipTier';
@@ -110,8 +110,8 @@ export class ResourceService {
         await tx.lockSchedule({ resourceId });
         const resource = await findOrThrow(tx.resources, resourceId);
         const now = this.deps.clock.now();
-        const bookings = await tx.bookings.findByResource(resourceId);
-        const upcoming = bookings.filter((b) => b.occupiesCapacity && !b.slot.hasEnded(now));
+        const notEnded = await tx.bookings.findByResource(resourceId, TimeSlot.onwardsFrom(now));
+        const upcoming = notEnded.filter((b) => b.occupiesCapacity);
 
         if (changes.capacity !== undefined && changes.capacity < resource.capacity) {
           const peak = peakConcurrency(upcoming.map((b) => b.slot));
@@ -157,12 +157,13 @@ export class ResourceService {
         assertCrewLead(actor);
         await tx.lockSchedule({ resourceId });
         const resource = await findOrThrow(tx.resources, resourceId);
-        resource.decommission(this.deps.clock.now());
+        const now = this.deps.clock.now();
+        resource.decommission(now);
         await tx.resources.save(resource);
         const revoked = await this.deps.revocation.revokePending(
           tx,
           actor,
-          await tx.bookings.findByResource(resourceId),
+          await tx.bookings.findByResource(resourceId, TimeSlot.onwardsFrom(now)),
           CancellationReason.RESOURCE_DECOMMISSIONED,
         );
         return { resource, revokedBookingIds: revoked.map((b) => b.id) };

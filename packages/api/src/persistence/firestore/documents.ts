@@ -93,11 +93,14 @@ export function bookingFromDocument(id: string, data: DocumentData): Booking {
 
 export function auditEventToDocument(event: AuditEvent): DocumentData {
   const { id, ...fields } = event;
+  const { reason } = event.details;
   return {
     ...fields,
     actor: { ...event.actor },
     subject: { ...event.subject },
     details: { ...event.details },
+    // Copied out of `details` so queries can filter on it (`details` is not indexed by key).
+    ...(typeof reason === 'string' ? { reason } : {}),
   };
 }
 
