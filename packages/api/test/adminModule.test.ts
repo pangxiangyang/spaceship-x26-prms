@@ -154,16 +154,19 @@ describe('admin module (Crew Leads)', () => {
     const pod = await createResource({ capacity: 1 });
     const a = await createPassenger('SILVER');
     const b = await createPassenger('GOLD');
+    const c = await createPassenger('GOLD');
     await api
       .post('/api/bookings')
       .set(auth(a.token))
       .send({ resourceId: pod.id, start: at(0), end: at(60) })
       .expect(201);
-    await api
-      .post('/api/bookings')
-      .set(auth(b.token))
-      .send({ resourceId: pod.id, start: at(0), end: at(60) })
-      .expect(409);
+    for (const turnedAway of [b, c]) {
+      await api
+        .post('/api/bookings')
+        .set(auth(turnedAway.token))
+        .send({ resourceId: pod.id, start: at(0), end: at(60) })
+        .expect(409);
+    }
     clock.advanceMinutes(60);
 
     const tiers = await api.get('/api/admin/reports/tier-usage').set(auth(crewToken)).expect(200);
@@ -179,12 +182,17 @@ describe('admin module (Crew Leads)', () => {
       .expect(200);
     expect(demand.body.period).toEqual({ from: at(0), to: at(60) });
     // The client explains levels with these instead of hard-coding them.
-    expect(demand.body.thresholds).toEqual({ high: 0.75, moderate: 0.4 });
+    expect(demand.body.thresholds).toEqual({
+      high: 0.75,
+      moderate: 0.4,
+      minTurnedAwayPassengers: 2,
+    });
     expect(demand.body.resources[0]).toMatchObject({
       resourceId: pod.id,
       utilization: 1,
       peakUtilization: 1,
-      capacityDenials: 1,
+      capacityDenials: 2,
+      turnedAwayPassengers: 2,
       demandLevel: 'HIGH',
       demandReason: 'TURNED_AWAY',
     });

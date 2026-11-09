@@ -101,16 +101,23 @@ export interface ResourceDemand {
   utilization: number;
   /** How full it was at its busiest moment (0..1). */
   peakUtilization: number;
+  /** Bookings refused because the resource was full. */
   capacityDenials: number;
+  /** Different passengers among those refusals. */
+  turnedAwayPassengers: number;
   demandLevel: 'HIGH' | 'MODERATE' | 'LOW';
   /** Which rule set the level; null when LOW. */
   demandReason: 'TURNED_AWAY' | 'UTILIZATION' | null;
 }
 
-/** Average-use ratios at which a resource counts as high or moderate demand. */
+/** When a resource counts as high or moderate demand. */
 export interface DemandThresholds {
+  /** Average use (0..1). */
   high: number;
+  /** Average use (0..1). */
   moderate: number;
+  /** Different passengers refused for capacity. */
+  minTurnedAwayPassengers: number;
 }
 
 export interface Meta {

@@ -121,7 +121,7 @@ describe('App', () => {
       '/api/admin/reports/tier-usage': { period, tiers: [] },
       '/api/admin/reports/resource-demand': {
         period,
-        thresholds: { high: 0.8, moderate: 0.5 },
+        thresholds: { high: 0.8, moderate: 0.5, minTurnedAwayPassengers: 2 },
         resources: [
           {
             ...row,
@@ -130,6 +130,7 @@ describe('App', () => {
             utilization: 0.0714,
             peakUtilization: 1,
             capacityDenials: 6,
+            turnedAwayPassengers: 2,
             demandLevel: 'HIGH',
             demandReason: 'TURNED_AWAY',
           },
@@ -140,6 +141,7 @@ describe('App', () => {
             utilization: 0.85,
             peakUtilization: 1,
             capacityDenials: 0,
+            turnedAwayPassengers: 0,
             demandLevel: 'HIGH',
             demandReason: 'UTILIZATION',
           },
@@ -150,11 +152,15 @@ describe('App', () => {
     const o2 = (await screen.findByText('Luxury O2 Pod', { selector: 'td' })).closest('tr')!;
     expect(within(o2).getByText('7%')).toBeInTheDocument();
     expect(within(o2).getByText('100%')).toBeInTheDocument();
-    expect(within(o2).getByText('High · 6 turned away')).toBeInTheDocument();
+    expect(within(o2).getByText('High · 2 passengers turned away')).toBeInTheDocument();
+    expect(within(o2).getByText('(2 passengers)')).toBeInTheDocument();
     const gym = screen.getByText('Fitness Center', { selector: 'td' }).closest('tr')!;
     expect(within(gym).getByText('High · 85% average use')).toBeInTheDocument();
     expect(screen.getByText(/average use reaches 80%/)).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Luxury O2 Pod (6 turned away)');
+    expect(screen.getByText(/once 2 passengers have been turned away/)).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Luxury O2 Pod (2 passengers turned away)',
+    );
   });
 
   it('lands crew leads in the admin module', async () => {

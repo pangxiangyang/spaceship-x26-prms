@@ -21,11 +21,13 @@ interface Period {
   to: string;
 }
 
-/** Why a resource got its demand level, e.g. "6 turned away" or "82% average use". */
+const passengers = (n: number) => `${n} passenger${n === 1 ? '' : 's'}`;
+
+/** Why a resource got its demand level, e.g. "2 passengers turned away" or "82% average use". */
 function demandReasonText(r: ResourceDemand): string | null {
   switch (r.demandReason) {
     case 'TURNED_AWAY':
-      return `${r.capacityDenials} turned away`;
+      return `${passengers(r.turnedAwayPassengers)} turned away`;
     case 'UTILIZATION':
       return `${formatPercent(r.utilization)} average use`;
     default:
@@ -143,9 +145,12 @@ export function ReportsPage() {
             <strong>Average use</strong> is booked time divided by available time (capacity × the
             time in service during the period), so quiet nights pull it down.{' '}
             <strong>Peak use</strong> is how full the resource got at its busiest moment. A resource
-            is in high demand as soon as anyone is turned away because it was full, or when average
-            use reaches {formatPercent(demand.data.thresholds.high)}; moderate from{' '}
-            {formatPercent(demand.data.thresholds.moderate)}.
+            is in high demand once {passengers(demand.data.thresholds.minTurnedAwayPassengers)} have
+            been turned away because it was full, or when average use reaches{' '}
+            {formatPercent(demand.data.thresholds.high)}; moderate from{' '}
+            {formatPercent(demand.data.thresholds.moderate)}. Turn-aways are counted when they
+            happen. The booking form already hides full slots, so they come from passengers racing
+            for the last place or booking with out-of-date availability.
           </p>
         )}
         {demand.loading && !demand.data && <Loading />}
@@ -180,7 +185,12 @@ export function ReportsPage() {
                         <span>{formatPercent(r.peakUtilization)}</span>
                       </div>
                     </td>
-                    <td>{r.capacityDenials}</td>
+                    <td>
+                      {r.capacityDenials}
+                      {r.capacityDenials > 0 && (
+                        <span className="muted"> ({passengers(r.turnedAwayPassengers)})</span>
+                      )}
+                    </td>
                     <td>
                       <DemandBadge resource={r} />
                     </td>

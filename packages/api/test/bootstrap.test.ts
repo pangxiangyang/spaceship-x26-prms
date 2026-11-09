@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ConflictError } from '@prms/domain';
+import { ConflictError, Role, TimeSlot } from '@prms/domain';
 import { createContainer } from '../src/bootstrap/container';
 import { OffsetClock } from '../src/bootstrap/OffsetClock';
 import { seedDemoData } from '../src/bootstrap/seedDemoData';
@@ -121,6 +121,25 @@ describe('demo seed', () => {
     });
     expect(denials.items.length).toBeGreaterThan(0);
     expect(denials.items.every((e) => e.details.reason === 'CAPACITY_EXCEEDED')).toBe(true);
+  });
+
+  it('tells the same demo story whatever time of day it is seeded', async () => {
+    // The daily reset runs at 20:00 UTC, after the afternoon slots of the seeded days.
+    for (const iso of ['2026-03-01T03:00:00Z', '2026-03-01T20:00:00Z']) {
+      const persistence = testPersistence();
+      const clock = new TestClock(new Date(iso));
+      const container = await createContainer(demoConfig(), { persistence, clock });
+      const lead = await persistence.repositories.users.findByUsername('commander');
+      const week = TimeSlot.of(new Date(clock.now().getTime() - 7 * 86_400_000), clock.now());
+
+      const demand = await container.domain.reports.resourceDemand(
+        { userId: lead!.id, role: Role.CREW_LEAD },
+        week,
+      );
+      expect(demand.find((r) => r.resourceName === 'Luxury O2 Pod')).toMatchObject({
+        demandReason: 'TURNED_AWAY',
+      });
+    }
   });
 
   it('fails instead of hiding an unexpected error during a planned turn-away', async () => {

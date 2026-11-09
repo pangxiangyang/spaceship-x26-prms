@@ -165,12 +165,15 @@ describe('ReportService', () => {
       const idle = await ctx.addResource({ name: 'Hygiene Pod', category: 'HYGIENE', capacity: 2 });
       const p1 = await ctx.addPassenger('PLATINUM');
       const p2 = await ctx.addPassenger('PLATINUM');
+      const p3 = await ctx.addPassenger('PLATINUM');
 
-      // O2 pod: booked the full 2-hour window, and a second passenger is turned away.
+      // O2 pod: booked the full 2-hour window, and two other passengers are turned away.
       await ctx.domain.bookings.book(p1.actor, { resourceId: o2.id, start: at(0), end: at(120) });
-      await expect(
-        ctx.domain.bookings.book(p2.actor, { resourceId: o2.id, start: at(30), end: at(60) }),
-      ).rejects.toThrow();
+      for (const { actor } of [p2, p3]) {
+        await expect(
+          ctx.domain.bookings.book(actor, { resourceId: o2.id, start: at(30), end: at(60) }),
+        ).rejects.toThrow();
+      }
       // Gym: one seat of four for one hour => 1*60 / (4*120) = 12.5%.
       await ctx.domain.bookings.book(p2.actor, { resourceId: gym.id, start: at(60), end: at(120) });
 
@@ -183,7 +186,8 @@ describe('ReportService', () => {
       expect(report[0]).toMatchObject({
         utilization: 1,
         peakUtilization: 1,
-        capacityDenials: 1,
+        capacityDenials: 2,
+        turnedAwayPassengers: 2,
         demandLevel: 'HIGH',
         demandReason: 'TURNED_AWAY',
       });
@@ -269,21 +273,71 @@ describe('ReportService', () => {
       ]);
     });
 
-    it('treats any turned-away request as high demand even at low utilisation', async () => {
+    it('treats turn-aways of enough different passengers as high demand, even at low use', async () => {
       const pod = await ctx.addResource({ capacity: 1 });
       const a = await ctx.addPassenger('SILVER');
       const b = await ctx.addPassenger('SILVER');
-      await ctx.domain.bookings.book(a.actor, { resourceId: pod.id, start: at(0), end: at(15) });
-      await ctx.domain.bookings
-        .book(b.actor, { resourceId: pod.id, start: at(0), end: at(15) })
-        .catch(() => undefined);
+      const c = await ctx.addPassenger('SILVER');
+      const slot = { resourceId: pod.id, start: at(0), end: at(15) };
+      await ctx.domain.bookings.book(a.actor, slot);
+      for (const { actor } of [b, c]) {
+        await ctx.domain.bookings.book(actor, slot).catch(() => undefined);
+      }
 
       const [row] = await ctx.domain.reports.resourceDemand(
         ctx.crewLead,
         TimeSlot.of(at(0), at(DAY)),
       );
       expect(row?.utilization).toBeLessThan(0.4);
-      expect(row).toMatchObject({ demandLevel: 'HIGH', demandReason: 'TURNED_AWAY' });
+      expect(row).toMatchObject({
+        capacityDenials: 2,
+        turnedAwayPassengers: 2,
+        demandLevel: 'HIGH',
+        demandReason: 'TURNED_AWAY',
+      });
+    });
+
+    it('does not let one passenger retrying mark a resource as high demand', async () => {
+      const pod = await ctx.addResource({ capacity: 1 });
+      const a = await ctx.addPassenger('SILVER');
+      const b = await ctx.addPassenger('SILVER');
+      const slot = { resourceId: pod.id, start: at(0), end: at(15) };
+      await ctx.domain.bookings.book(a.actor, slot);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await ctx.domain.bookings.book(b.actor, slot).catch(() => undefined);
+      }
+
+      const [row] = await ctx.domain.reports.resourceDemand(
+        ctx.crewLead,
+        TimeSlot.of(at(0), at(DAY)),
+      );
+      expect(row).toMatchObject({
+        capacityDenials: 3,
+        turnedAwayPassengers: 1,
+        demandLevel: 'LOW',
+        demandReason: null,
+      });
+    });
+
+    it('counts a turn-away when it happened, not by the slot that was requested', async () => {
+      // Today's refusals for a slot three days ahead are today's shortage signal.
+      const pod = await ctx.addResource({ capacity: 1 });
+      const [a, b, c] = [
+        await ctx.addPassenger('SILVER'),
+        await ctx.addPassenger('SILVER'),
+        await ctx.addPassenger('SILVER'),
+      ];
+      const slot = { resourceId: pod.id, start: at(3 * DAY), end: at(3 * DAY + 60) };
+      await ctx.domain.bookings.book(a.actor, slot);
+      for (const { actor } of [b, c]) {
+        await ctx.domain.bookings.book(actor, slot).catch(() => undefined);
+      }
+
+      const [row] = await ctx.domain.reports.resourceDemand(
+        ctx.crewLead,
+        TimeSlot.of(at(-DAY), at(1)),
+      );
+      expect(row).toMatchObject({ turnedAwayPassengers: 2, demandReason: 'TURNED_AWAY' });
     });
 
     it('rejects periods longer than 90 days', async () => {

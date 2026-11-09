@@ -1,7 +1,7 @@
 import type { AuditLog } from '../audit/AuditLog';
 import type { Booking, BookingLifecycle } from '../bookings/Booking';
 import type { BookingRepository } from '../bookings/BookingRepository';
-import { TimeSlot, peakConcurrency } from '../bookings/TimeSlot';
+import { peakConcurrency, type TimeSlot } from '../bookings/TimeSlot';
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertSelfOrCrewLead } from '../identity/authorization';
 import { ALL_TIERS, type MembershipTier } from '../membership/MembershipTier';
@@ -83,19 +83,30 @@ export interface ResourceDemand {
    */
   peakUtilization: number;
   /** Booking requests refused because the resource was full. */
+  /** Bookings refused because the resource was full. */
   capacityDenials: number;
+  /** Different passengers among those refusals. */
+  turnedAwayPassengers: number;
   demandLevel: DemandLevel;
   demandReason: DemandReason;
 }
 
 export interface DemandThresholds {
+  /** Average use from which a resource is in high demand. */
   high: number;
+  /** Average use from which a resource is in moderate demand. */
   moderate: number;
+  /**
+   * How many different passengers must be refused for capacity before that alone means
+   * high demand. More than one, so one passenger retrying cannot raise the alarm.
+   */
+  minTurnedAwayPassengers: number;
 }
 
 export const DEFAULT_DEMAND_THRESHOLDS: Readonly<DemandThresholds> = Object.freeze({
   high: 0.75,
   moderate: 0.4,
+  minTurnedAwayPassengers: 2,
 });
 
 export interface ReportServiceDeps {
@@ -227,8 +238,10 @@ export class ReportService {
             own.map((b) => b.slot),
             period,
           ) / resource.capacity;
-        const capacityDenials = denials.get(resource.id) ?? 0;
-        const { level, reason } = assessDemand(utilization, capacityDenials, thresholds);
+        const refused = denials.get(resource.id);
+        const capacityDenials = refused?.refusals ?? 0;
+        const turnedAwayPassengers = refused?.passengers.size ?? 0;
+        const { level, reason } = assessDemand(utilization, turnedAwayPassengers, thresholds);
         return {
           resourceId: resource.id,
           resourceName: resource.name,
@@ -240,6 +253,7 @@ export class ReportService {
           utilization: round(utilization, 4),
           peakUtilization: round(peakUtilization, 4),
           capacityDenials,
+          turnedAwayPassengers,
           demandLevel: level,
           demandReason: reason,
           active: resource.isActive,
@@ -264,23 +278,34 @@ export class ReportService {
     return (await this.deps.bookings.findOverlapping(period)).filter((b) => b.occupiesCapacity);
   }
 
-  /** Counts CAPACITY_EXCEEDED denials whose requested slot overlaps the period. */
-  private async capacityDenialsIn(period: TimeSlot): Promise<Map<string, number>> {
+  /**
+   * Bookings refused for capacity during the period, per resource: how many refusals and
+   * from which passengers. A refusal counts when it happened, not by the slot that was
+   * asked for, so today's refusals for next week are today's shortage signal.
+   */
+  private async capacityDenialsIn(period: TimeSlot): Promise<Map<string, TurnAways>> {
     const { items } = await this.deps.auditLog.query({
       action: 'BOOKING_CREATE',
       outcome: 'DENIED',
+      reason: 'CAPACITY_EXCEEDED',
+      from: period.start,
+      to: period.end,
     });
-    const counts = new Map<string, number>();
+    const byResource = new Map<string, TurnAways>();
     for (const event of items) {
-      const { reason, start, end } = event.details;
-      if (reason !== 'CAPACITY_EXCEEDED' || !event.subject.id) continue;
-      if (typeof start !== 'string' || typeof end !== 'string') continue;
-      const requested = TimeSlot.of(new Date(start), new Date(end));
-      if (!requested.overlaps(period)) continue;
-      counts.set(event.subject.id, (counts.get(event.subject.id) ?? 0) + 1);
+      if (!event.subject.id) continue;
+      const entry = byResource.get(event.subject.id) ?? { refusals: 0, passengers: new Set() };
+      entry.refusals += 1;
+      entry.passengers.add(event.actor.userId);
+      byResource.set(event.subject.id, entry);
     }
-    return counts;
+    return byResource;
   }
+}
+
+interface TurnAways {
+  refusals: number;
+  passengers: Set<string>;
 }
 
 function assertReportablePeriod(period: TimeSlot): void {
@@ -307,16 +332,18 @@ function clippedMinutes(booking: Booking, period: TimeSlot): number {
 }
 
 /**
- * A refused request is the clearest shortage signal, so it outranks average use: a
- * resource that turns people away at its busy hour is in short supply, however idle it
- * is overnight.
+ * Refused requests are the clearest shortage signal, so they outrank average use: a
+ * resource that turns several passengers away at its busy hour is in short supply, however
+ * idle it is overnight.
  */
 function assessDemand(
   utilization: number,
-  denials: number,
+  turnedAwayPassengers: number,
   t: DemandThresholds,
 ): { level: DemandLevel; reason: DemandReason } {
-  if (denials > 0) return { level: 'HIGH', reason: 'TURNED_AWAY' };
+  if (turnedAwayPassengers >= t.minTurnedAwayPassengers) {
+    return { level: 'HIGH', reason: 'TURNED_AWAY' };
+  }
   if (utilization >= t.high) return { level: 'HIGH', reason: 'UTILIZATION' };
   if (utilization >= t.moderate) return { level: 'MODERATE', reason: 'UTILIZATION' };
   return { level: 'LOW', reason: null };

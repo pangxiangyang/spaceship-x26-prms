@@ -101,8 +101,8 @@ describe('platform concerns', () => {
     const o2 = demand.body.resources.find(
       (r: { resourceName: string }) => r.resourceName === 'Luxury O2 Pod',
     );
-    expect(o2).toMatchObject({ demandLevel: 'HIGH' });
-    expect(o2.capacityDenials).toBeGreaterThan(0);
+    expect(o2).toMatchObject({ demandLevel: 'HIGH', demandReason: 'TURNED_AWAY' });
+    expect(o2.turnedAwayPassengers).toBeGreaterThanOrEqual(2);
     await api
       .post('/api/auth/login')
       .send({ username: 'pia.platinum', password: 'passenger123' })

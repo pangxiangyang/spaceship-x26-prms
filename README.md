@@ -174,11 +174,14 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
   upgrade doesn't rewrite history.
 - **Usage analytics.** For each resource: **average use** (booked seat-minutes ÷ available
   seat-minutes), **peak use** (how full it got at its busiest moment), and the number of
-  passengers **turned away because it was full**. Any turn-away marks a resource as HIGH
-  demand, which is the earliest shortage signal, and the report says which rule set each
-  level. In the demo data, the two-seat Luxury O2 Pod shows how average use can mislead: it
-  is full every afternoon (100% peak) and turns a third passenger away, yet its average over
-  the week is about 7% because it is empty at night.
+  bookings **refused because it was full**, with how many different passengers that was.
+  Two or more turned-away passengers mark a resource as HIGH demand, the earliest shortage
+  signal, and the report says which rule set each level. In the demo data, the two-seat
+  Luxury O2 Pod shows how average use can mislead: it is full every afternoon (100% peak)
+  and turns two other regulars away, yet its average over the week is about 7% because it is
+  empty at night. The booking form hides full slots, so with real passengers refusals come
+  only from races for the last place or stale availability; the seed books through the
+  domain directly to show the signal.
 
 ---
 

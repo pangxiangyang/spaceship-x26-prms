@@ -93,10 +93,10 @@ const PASSENGERS: { username: string; displayName: string; tier: MembershipTier 
   { username: 'pia.platinum', displayName: 'Pia Lindqvist', tier: 'PLATINUM' },
   { username: 'raj.platinum', displayName: 'Raj Patel', tier: 'PLATINUM' },
   { username: 'lena.platinum', displayName: 'Lena Novak', tier: 'PLATINUM' },
+  { username: 'theo.platinum', displayName: 'Theo Brandt', tier: 'PLATINUM' },
 ];
 
 const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 
 /**
  * Populates a believable week of activity through the real domain services,
@@ -150,28 +150,42 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
     return booking;
   };
 
+  /**
+   * Tries to book a slot an hour before it starts, after the regulars have booked it, so the
+   * request is refused for capacity (and audited) whatever time of day the seed runs.
+   */
+  const turnedAway = async (
+    username: string,
+    resourceName: string,
+    daysAgo: number,
+    hour: number,
+    hours: number,
+  ) => {
+    const start = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - daysAgo, hour),
+    );
+    const end = new Date(start.getTime() + hours * HOUR_MS);
+    const resourceId = resources.get(resourceName)!.id;
+    await clock
+      .travelTo(new Date(start.getTime() - HOUR_MS), () =>
+        domain.bookings.book(actorFor(username), { resourceId, start, end }),
+      )
+      .then(() => {
+        throw new Error(`The demo expects ${resourceName} to be full at ${start.toISOString()}.`);
+      }, ignoreTurnAway);
+  };
+
   for (let daysAgo = 6; daysAgo >= 1; daysAgo -= 1) {
     await pastSession('sam.silver', 'Food Supply Station', daysAgo, 7, 1);
     await pastSession('sam.silver', 'Fitness Center', daysAgo, 17, 1, daysAgo % 3 !== 0);
     await pastSession('mia.silver', 'Sleeping Pod Bay', daysAgo, 1, 4);
     await pastSession('gwen.gold', 'Private Cabin', daysAgo, 20, 3);
     await pastSession('omar.gold', 'Advanced Medical Bay', daysAgo, 10, 1, daysAgo % 2 === 0);
-    // The Luxury O2 Pods are the ship's contested resource: two seats, three regulars.
+    // The Luxury O2 Pods are the ship's contested resource: two seats, four regulars.
     await pastSession('pia.platinum', 'Luxury O2 Pod', daysAgo, 14, 2);
     await pastSession('raj.platinum', 'Luxury O2 Pod', daysAgo, 14, 2);
-    await clock
-      .travelTo(new Date(today.getTime() - daysAgo * DAY_MS), () =>
-        domain.bookings.book(actorFor('lena.platinum'), {
-          resourceId: resources.get('Luxury O2 Pod')!.id,
-          start: new Date(
-            Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - daysAgo, 14),
-          ),
-          end: new Date(
-            Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - daysAgo, 16),
-          ),
-        }),
-      )
-      .catch(ignoreTurnAway); // turned away: recorded as a CAPACITY_EXCEEDED denial
+    await turnedAway('lena.platinum', 'Luxury O2 Pod', daysAgo, 14, 2);
+    if (daysAgo % 2 === 1) await turnedAway('theo.platinum', 'Luxury O2 Pod', daysAgo, 14, 2);
     await pastSession('lena.platinum', 'VIP Rec Deck', daysAgo, 19, 2);
   }
 

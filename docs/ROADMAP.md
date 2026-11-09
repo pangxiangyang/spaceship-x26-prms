@@ -43,6 +43,16 @@ the authority: if two people pick the same last place at once, the second still 
 `409 CAPACITY_EXCEEDED`. If the client logic grew complicated, an endpoint returning free
 places per 15-minute block would keep the UI simple.
 
+### A waitlist for full resources
+
+**Today.** The booking form disables _Confirm_ for a full slot, so the demand report only
+sees passengers who were refused (two people racing for the last place, or out-of-date
+availability). Someone who sees "fully booked" and gives up leaves no trace.
+
+**What.** "Notify me if a place opens": a waitlist entry per passenger and slot. It records
+unmet demand explicitly, so the report could count waitlisted passengers alongside
+refusals, and a cancellation could offer the place to the first person waiting.
+
 ## Configuration instead of constants
 
 - The **booking policy** (duration limits, how far ahead, check-in window) and the
