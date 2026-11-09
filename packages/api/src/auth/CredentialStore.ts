@@ -14,4 +14,9 @@ export class InMemoryCredentialStore implements CredentialStore {
   async getPasswordHash(userId: string): Promise<string | undefined> {
     return this.hashes.get(userId);
   }
+
+  /** Removes everything. Used by the demo reset. */
+  clear(): void {
+    this.hashes.clear();
+  }
 }

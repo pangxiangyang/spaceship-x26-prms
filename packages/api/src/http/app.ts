@@ -16,6 +16,8 @@ import { passengerRoutes } from './routes/passengerRoutes';
 export function createApp(container: AppContainer, logger: Logger): Express {
   const app = express();
   app.disable('x-powered-by');
+  // Behind Cloud Run (or any proxy) the client address arrives in X-Forwarded-For.
+  if (container.config.trustProxy > 0) app.set('trust proxy', container.config.trustProxy);
   app.use(helmet());
   app.use(express.json({ limit: '16kb' }));
   if (container.config.env !== 'test') app.use(requestLogger(logger));
@@ -23,10 +25,10 @@ export function createApp(container: AppContainer, logger: Logger): Express {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', time: container.domain.clock.now().toISOString() });
   });
-  app.use('/api/meta', metaRoutes());
+  app.use('/api/meta', metaRoutes(container.config));
   app.use('/api/auth', authRoutes(container));
 
-  const authenticated = authenticate(container.tokens);
+  const authenticated = authenticate(container.tokens, container.auth);
   app.use('/api/admin', authenticated, requireRole(Role.CREW_LEAD), adminRoutes(container));
   app.use('/api', authenticated, passengerRoutes(container));
 

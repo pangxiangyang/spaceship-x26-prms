@@ -1,22 +1,34 @@
 import type { RequestHandler, Response } from 'express';
-import type { Actor, Role } from '@prms/domain';
+import { ForbiddenError, type Actor, type AnyUser, type Role } from '@prms/domain';
 import { AuthenticationError } from '../../auth/AuthenticationError';
 import type { TokenService } from '../../auth/TokenService';
-import { ForbiddenError } from '@prms/domain';
 
 interface AuthenticatedLocals {
   actor?: Actor;
+  user?: AnyUser;
 }
 
-/** Resolves the Bearer token into an Actor on `res.locals`. */
-export function authenticate(tokens: TokenService): RequestHandler {
-  return (req, res, next) => {
+/** Looks up the account behind a verified token. */
+export interface AccountLookup {
+  currentUser(actor: Actor): Promise<AnyUser>;
+}
+
+/**
+ * Resolves the Bearer token into an Actor on `res.locals`, and confirms the
+ * account still exists. A token outlives its account when an account is
+ * removed (e.g. a demo reset), and must stop working at that moment.
+ */
+export function authenticate(tokens: TokenService, accounts: AccountLookup): RequestHandler {
+  return async (req, res, next) => {
     const header = req.headers.authorization ?? '';
     const [scheme, token] = header.split(' ');
     if (scheme !== 'Bearer' || !token) {
       throw new AuthenticationError();
     }
-    (res.locals as AuthenticatedLocals).actor = tokens.verify(token);
+    const actor = tokens.verify(token);
+    const locals = res.locals as AuthenticatedLocals;
+    locals.user = await accounts.currentUser(actor);
+    locals.actor = actor;
     next();
   };
 }
@@ -35,4 +47,11 @@ export function actorOf(res: Response): Actor {
   const actor = (res.locals as AuthenticatedLocals).actor;
   if (!actor) throw new AuthenticationError();
   return actor;
+}
+
+/** The signed-in account, loaded by `authenticate`. */
+export function userOf(res: Response): AnyUser {
+  const user = (res.locals as AuthenticatedLocals).user;
+  if (!user) throw new AuthenticationError();
+  return user;
 }

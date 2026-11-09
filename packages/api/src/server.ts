@@ -17,13 +17,16 @@ async function main(): Promise<void> {
     logger.info('PRMS API listening', {
       port: config.port,
       env: config.env,
+      storage: config.storage.kind,
       demoData: config.seedDemoData,
     });
   });
 
   const shutdown = (signal: string) => {
     logger.info('Shutting down', { signal });
-    server.close(() => process.exit(0));
+    server.close(() => {
+      void container.persistence.close().finally(() => process.exit(0));
+    });
     setTimeout(() => process.exit(1), 10_000).unref();
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));

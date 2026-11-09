@@ -4,11 +4,17 @@ export interface Logger {
   error(message: string, meta?: Record<string, unknown>): void;
 }
 
-/** Structured JSON lines on stdout/stderr — easy to ship to any log aggregator. */
+const line = (severity: 'INFO' | 'WARNING' | 'ERROR', message: string, meta?: object) =>
+  JSON.stringify({ severity, message, ...meta });
+
+/**
+ * Structured JSON lines on stdout/stderr. `severity` is the field Google Cloud
+ * Logging reads, so levels show up correctly on Cloud Run.
+ */
 export const jsonLogger: Logger = {
-  info: (message, meta) => console.info(JSON.stringify({ level: 'info', message, ...meta })),
-  warn: (message, meta) => console.warn(JSON.stringify({ level: 'warn', message, ...meta })),
-  error: (message, meta) => console.error(JSON.stringify({ level: 'error', message, ...meta })),
+  info: (message, meta) => console.info(line('INFO', message, meta)),
+  warn: (message, meta) => console.warn(line('WARNING', message, meta)),
+  error: (message, meta) => console.error(line('ERROR', message, meta)),
 };
 
 export const silentLogger: Logger = { info: () => {}, warn: () => {}, error: () => {} };

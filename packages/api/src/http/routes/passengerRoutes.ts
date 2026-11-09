@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { TimeSlot, ValidationError } from '@prms/domain';
 import type { AppContainer } from '../../bootstrap/container';
-import { actorOf } from '../middleware/authenticate';
+import { actorOf, userOf } from '../middleware/authenticate';
 import { presentBooking, presentHistoryEntry, presentResource, presentUser } from '../presenters';
 import { idParam, isoDateTime, parse } from '../validation';
 
@@ -17,12 +17,12 @@ const bookingBody = z.object({
 const windowQuery = z.object({ from: isoDateTime, to: isoDateTime });
 
 /** Routes available to any signed-in user; the domain decides what each role may see. */
-export function passengerRoutes({ auth, domain }: AppContainer): Router {
+export function passengerRoutes({ domain }: AppContainer): Router {
   const router = Router();
   const now = () => domain.clock.now();
 
   router.get('/me', async (_req, res) => {
-    res.json({ user: presentUser(await auth.currentUser(actorOf(res))) });
+    res.json({ user: presentUser(userOf(res)) });
   });
 
   // Resource discovery

@@ -1,9 +1,35 @@
 import request from 'supertest';
+import { afterAll } from 'vitest';
 import type { Clock } from '@prms/domain';
 import { createContainer } from '../../src/bootstrap/container';
 import { DEMO_CREW_LEADS, type AppConfig } from '../../src/config';
 import { createApp } from '../../src/http/app';
 import { silentLogger } from '../../src/http/logger';
+import { createMemoryPersistence } from '../../src/persistence/memoryPersistence';
+import type { Persistence } from '../../src/persistence/Persistence';
+import { createFirestoreTestPersistence } from './firestoreTarget';
+
+/**
+ * Storage for API tests. In-memory by default; `PRMS_TEST_STORAGE=firestore`
+ * runs the same suite against Firestore (emulator or a real project).
+ */
+const opened: Persistence[] = [];
+
+export function testPersistence(): Persistence {
+  const persistence =
+    process.env.PRMS_TEST_STORAGE === 'firestore'
+      ? createFirestoreTestPersistence()
+      : createMemoryPersistence();
+  opened.push(persistence);
+  return persistence;
+}
+
+afterAll(async () => {
+  for (const persistence of opened.splice(0)) {
+    await persistence.wipe();
+    await persistence.close();
+  }
+});
 
 export const NOW = new Date('2026-03-01T08:00:00.000Z');
 export const at = (minutes: number) => new Date(NOW.getTime() + minutes * 60_000).toISOString();
@@ -27,13 +53,18 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     crewLeads: DEMO_CREW_LEADS,
     webDistDir: undefined,
     loginRateLimit: { windowMs: 60_000, max: 1000 },
+    storage: { kind: 'memory' },
+    trustProxy: 0,
     ...overrides,
   };
 }
 
 export async function createTestApp(configOverrides: Partial<AppConfig> = {}) {
   const clock = new TestClock();
-  const container = await createContainer(testConfig(configOverrides), { clock });
+  const container = await createContainer(testConfig(configOverrides), {
+    clock,
+    persistence: testPersistence(),
+  });
   const app = createApp(container, silentLogger);
   const api = request(app);
 

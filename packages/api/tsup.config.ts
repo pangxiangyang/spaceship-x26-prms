@@ -1,9 +1,12 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/server.ts'],
+  entry: {
+    server: 'src/server.ts',
+    'reset-demo': 'src/jobs/resetDemo.ts',
+  },
   format: ['esm'],
-  target: 'node20',
+  target: 'node22',
   platform: 'node',
   outDir: 'dist',
   clean: true,

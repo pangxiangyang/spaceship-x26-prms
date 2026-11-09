@@ -1,9 +1,10 @@
 import {
+  ConflictError,
+  CrewLead,
   ValidationError,
   type Actor,
   type AnyUser,
   type CreatePassengerInput,
-  type CrewLead,
   type Passenger,
   type PrmsDomain,
   type RegisterCrewLeadInput,
@@ -60,6 +61,29 @@ export class AuthService {
     const lead = await this.domain.crewLeads.register(input);
     await this.credentials.setPasswordHash(lead.id, await this.hasher.hash(input.password));
     return lead;
+  }
+
+  /**
+   * Makes a configured Crew Lead exist with the configured password. Safe to run
+   * on every start against persistent storage: an existing lead is kept (and its
+   * password updated if the configuration rotated it), a missing one is
+   * registered through the domain, which still enforces the limit of three.
+   */
+  async ensureCrewLead(input: RegisterCrewLeadInput & { password: string }): Promise<CrewLead> {
+    const existing = await this.domain.repositories.users.findByUsername(input.username);
+    if (!existing) return this.registerCrewLead(input);
+    if (!(existing instanceof CrewLead)) {
+      throw new ConflictError(
+        'USERNAME_TAKEN',
+        `Configured Crew Lead '${existing.username}' is already a passenger account.`,
+      );
+    }
+    const hash = await this.credentials.getPasswordHash(existing.id);
+    if (!hash || !(await this.hasher.verify(input.password, hash))) {
+      assertPasswordPolicy(input.password);
+      await this.credentials.setPasswordHash(existing.id, await this.hasher.hash(input.password));
+    }
+    return existing;
   }
 
   async createPassengerAccount(

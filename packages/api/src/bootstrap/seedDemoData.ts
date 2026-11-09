@@ -198,3 +198,19 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
 function startOfUtcHour(date: Date): Date {
   return new Date(Math.floor(date.getTime() / HOUR_MS) * HOUR_MS);
 }
+
+export interface DemoAccount {
+  label: string;
+  username: string;
+  password: string;
+}
+
+/** Sign-in details shown on the login page of a demo deployment. */
+export function demoAccounts(crewLead: { username: string; password: string }): DemoAccount[] {
+  return [
+    { label: 'Crew Lead', username: crewLead.username, password: crewLead.password },
+    { label: 'Silver passenger', username: 'sam.silver', password: DEMO_PASSENGER_PASSWORD },
+    { label: 'Gold passenger', username: 'gwen.gold', password: DEMO_PASSENGER_PASSWORD },
+    { label: 'Platinum passenger', username: 'pia.platinum', password: DEMO_PASSENGER_PASSWORD },
+  ];
+}
