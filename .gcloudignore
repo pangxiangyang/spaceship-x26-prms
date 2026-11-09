@@ -1,0 +1,7 @@
+# Files Cloud Build does not need. Dependencies are installed and the app is
+# built inside the image (see Dockerfile).
+.git
+.github
+docs
+deploy
+#!include:.gitignore

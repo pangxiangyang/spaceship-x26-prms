@@ -20,3 +20,35 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:coverage
       - run: npm run build
+      # Unit tests load modules through Vite; this starts the real Node bundle,
+      # which catches module-format problems the test runner hides.
+      - name: Smoke-test the production bundle
+        run: |
+          export NODE_ENV=production STORAGE=memory PORT=3100 JWT_SECRET="$(openssl rand -hex 32)"
+          export PRMS_CREW_LEADS='[{"username":"lead.a","displayName":"A","password":"smoke-test-password"},{"username":"lead.b","displayName":"B","password":"smoke-test-password"},{"username":"lead.c","displayName":"C","password":"smoke-test-password"}]'
+          node packages/api/dist/server.js &
+          for _ in $(seq 1 30); do
+            if curl -sf localhost:3100/api/health; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+
+  firestore:
+    name: API tests on the Firestore emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Start the Firestore emulator
+        run: |
+          docker run -d --name firestore -p 8080:8080 \
+            gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
+            gcloud emulators firestore start --host-port=0.0.0.0:8080
+          timeout 180 bash -c 'until curl -s localhost:8080 > /dev/null; do sleep 2; done'
+      - run: npm ci
+      - run: npm run test:firestore -w @prms/api
+        env:
+          FIRESTORE_EMULATOR_HOST: localhost:8080
