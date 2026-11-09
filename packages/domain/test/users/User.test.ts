@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CrewLead, Passenger } from '../../src/users/User';
+import { CrewLead, Passenger, restoreUser } from '../../src/users/User';
 import { MembershipTier } from '../../src/membership/MembershipTier';
 import { ValidationError } from '../../src/shared/errors';
 
@@ -81,5 +81,38 @@ describe('CrewLead', () => {
   it('is created with the crew lead role', () => {
     const lead = CrewLead.create({ ...base, username: 'commander', displayName: 'Cmdr. Shepard' });
     expect(lead.role).toBe('CREW_LEAD');
+  });
+});
+
+describe('user snapshots', () => {
+  it('restores passengers and crew leads as independent copies', () => {
+    const passenger = Passenger.create({
+      ...base,
+      username: 'ada',
+      displayName: 'Ada',
+      tier: MembershipTier.GOLD,
+    });
+    const restored = restoreUser(passenger.toSnapshot());
+    expect(restored).toBeInstanceOf(Passenger);
+    expect(restored).toMatchObject({ id: passenger.id, username: 'ada', tier: 'GOLD' });
+
+    (restored as Passenger).changeTier(MembershipTier.SILVER);
+    expect(passenger.tier).toBe('GOLD');
+
+    const lead = CrewLead.create({ ...base, username: 'commander', displayName: 'Cmdr.' });
+    expect(restoreUser(lead.toSnapshot())).toBeInstanceOf(CrewLead);
+  });
+
+  it('refuses a stored passenger without a valid tier', () => {
+    const snapshot = {
+      ...Passenger.create({
+        ...base,
+        username: 'ada',
+        displayName: 'Ada',
+        tier: 'GOLD',
+      }).toSnapshot(),
+      tier: null,
+    };
+    expect(() => restoreUser(snapshot)).toThrow(ValidationError);
   });
 });

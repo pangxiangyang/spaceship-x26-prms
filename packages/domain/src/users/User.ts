@@ -16,6 +16,17 @@ export function normalizeUsername(raw: string): string {
   return username;
 }
 
+/** Plain data for storing a user; `restoreUser` rebuilds (and re-validates) the entity. */
+export interface UserSnapshot {
+  id: string;
+  username: string;
+  displayName: string;
+  role: Role;
+  /** Passengers only. */
+  tier: MembershipTier | null;
+  createdAt: Date;
+}
+
 export interface UserProps {
   id: string;
   username: string;
@@ -44,6 +55,17 @@ export abstract class User {
 
   rename(displayName: string): void {
     this._displayName = requireNonBlank(displayName, 'Display name', DISPLAY_NAME_MAX);
+  }
+
+  toSnapshot(): UserSnapshot {
+    return {
+      id: this.id,
+      username: this.username,
+      displayName: this._displayName,
+      role: this.role,
+      tier: null,
+      createdAt: this.createdAt,
+    };
   }
 }
 
@@ -86,6 +108,10 @@ export class Passenger extends User {
     return this._tier;
   }
 
+  override toSnapshot(): UserSnapshot {
+    return { ...super.toSnapshot(), tier: this._tier };
+  }
+
   hasAccessTo(requiredTier: MembershipTier): boolean {
     return tierIncludes(this._tier, requiredTier);
   }
@@ -109,3 +135,18 @@ export class Passenger extends User {
 }
 
 export type AnyUser = CrewLead | Passenger;
+
+/** Rebuilds a stored user through the entity factories, so stored data is re-validated. */
+export function restoreUser(snapshot: UserSnapshot): AnyUser {
+  const props = {
+    id: snapshot.id,
+    username: snapshot.username,
+    displayName: snapshot.displayName,
+    createdAt: snapshot.createdAt,
+  };
+  if (snapshot.role === Role.CREW_LEAD) return CrewLead.create(props);
+  if (snapshot.role === Role.PASSENGER && snapshot.tier !== null) {
+    return Passenger.create({ ...props, tier: snapshot.tier });
+  }
+  throw new ValidationError(`Stored user '${snapshot.id}' has no valid role and tier.`);
+}
