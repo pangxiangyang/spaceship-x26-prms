@@ -31,6 +31,12 @@ export interface BookResourceInput {
   end: Date;
 }
 
+/** A new booking together with the resource as it was checked when booking. */
+export interface BookingConfirmation {
+  booking: Booking;
+  resource: Resource;
+}
+
 export interface ResourceOccupancy {
   resource: Resource;
   /** Anonymised occupied slots inside the requested window. */
@@ -55,7 +61,7 @@ export interface BookingServiceDeps {
 export class BookingService {
   constructor(private readonly deps: BookingServiceDeps) {}
 
-  book(actor: Actor, input: BookResourceInput): Promise<Booking> {
+  book(actor: Actor, input: BookResourceInput): Promise<BookingConfirmation> {
     return this.deps.audit.track(
       {
         actor,
@@ -86,9 +92,9 @@ export class BookingService {
             createdAt: now,
           });
           await this.deps.bookings.save(booking);
-          return booking;
+          return { booking, resource };
         }),
-      (booking) => ({ details: { bookingId: booking.id } }),
+      ({ booking }) => ({ details: { bookingId: booking.id } }),
     );
   }
 

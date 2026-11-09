@@ -63,8 +63,9 @@ export function passengerRoutes({ domain }: AppContainer): Router {
   router.post('/bookings', async (req, res) => {
     const input = parse(bookingBody, req.body);
     const actor = actorOf(res);
-    const booking = await domain.bookings.book(actor, input);
-    const resource = await domain.resources.get(actor, booking.resourceId);
+    // Present the resource checked inside the booking: asking again could be refused if a
+    // Crew Lead changed access in between, although the booking already exists.
+    const { booking, resource } = await domain.bookings.book(actor, input);
     res.status(201).json({ booking: presentBooking(booking, now(), resource) });
   });
 

@@ -87,17 +87,17 @@ describe('PassengerService', () => {
         minTier: 'PLATINUM',
       });
 
-      const keep = await ctx.domain.bookings.book(actor, {
+      const { booking: keep } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
       });
-      const lose1 = await ctx.domain.bookings.book(actor, {
+      const { booking: lose1 } = await ctx.domain.bookings.book(actor, {
         resourceId: cabin.id,
         start: at(120),
         end: at(150),
       });
-      const lose2 = await ctx.domain.bookings.book(actor, {
+      const { booking: lose2 } = await ctx.domain.bookings.book(actor, {
         resourceId: deck.id,
         start: at(180),
         end: at(210),
@@ -117,7 +117,7 @@ describe('PassengerService', () => {
     it('lets an in-progress session finish after a downgrade', async () => {
       const { passenger, actor } = await ctx.addPassenger('GOLD');
       const cabin = await ctx.addResource({ name: 'Cabin', category: 'CABIN', minTier: 'GOLD' });
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking } = await ctx.domain.bookings.book(actor, {
         resourceId: cabin.id,
         start: at(0),
         end: at(60),

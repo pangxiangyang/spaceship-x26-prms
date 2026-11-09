@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { NotFoundError } from '@prms/domain';
 import { at, createTestApp } from './support/testApp';
 
 describe('passenger journey', () => {
@@ -54,6 +55,24 @@ describe('passenger journey', () => {
 
     const bookings = await api.get('/api/bookings').set(auth(pax.token)).expect(200);
     expect(bookings.body.bookings).toHaveLength(1);
+  });
+
+  it('confirms a booking that was saved, even if access changes before the response', async () => {
+    const { api, container, createResource, createPassenger, auth } = await createTestApp();
+    const pod = await createResource({ name: 'Sleeping Pod' });
+    const pax = await createPassenger('SILVER');
+    // A Crew Lead decommissions the pod right after the booking is saved: reading the
+    // resource again would now be refused, but the booking exists and must be confirmed.
+    vi.spyOn(container.domain.resources, 'get').mockRejectedValue(
+      new NotFoundError('Resource', pod.id),
+    );
+
+    const created = await api
+      .post('/api/bookings')
+      .set(auth(pax.token))
+      .send({ resourceId: pod.id, start: at(30), end: at(90) })
+      .expect(201);
+    expect(created.body.booking).toMatchObject({ resourceName: 'Sleeping Pod' });
   });
 
   it('maps business-rule violations to clear HTTP errors', async () => {

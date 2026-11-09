@@ -140,7 +140,7 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
     const end = new Date(start.getTime() + hours * HOUR_MS);
     const actor = actorFor(username);
     const resourceId = resources.get(resourceName)!.id;
-    const booking = await clock.travelTo(new Date(start.getTime() - 2 * HOUR_MS), () =>
+    const { booking } = await clock.travelTo(new Date(start.getTime() - 2 * HOUR_MS), () =>
       domain.bookings.book(actor, { resourceId, start, end }),
     );
     if (used) {

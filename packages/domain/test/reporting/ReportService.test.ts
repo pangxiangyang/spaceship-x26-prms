@@ -17,7 +17,9 @@ describe('ReportService', () => {
       const gym = await ctx.addResource({ name: 'Gym', category: 'FITNESS', capacity: 5 });
       const { passenger, actor } = await ctx.addPassenger('SILVER');
       const book = (resourceId: string, start: number, end: number) =>
-        ctx.domain.bookings.book(actor, { resourceId, start: at(start), end: at(end) });
+        ctx.domain.bookings
+          .book(actor, { resourceId, start: at(start), end: at(end) })
+          .then((confirmation) => confirmation.booking);
 
       const used = await book(pod.id, 0, 60);
       await ctx.domain.bookings.checkIn(actor, used.id);
@@ -25,7 +27,7 @@ describe('ReportService', () => {
       const cancelled = await book(gym.id, 200, 230);
       await ctx.domain.bookings.cancel(actor, cancelled.id);
       ctx.clock.advanceMinutes(DAY); // next day
-      const gymUsed = await ctx.domain.bookings.book(actor, {
+      const { booking: gymUsed } = await ctx.domain.bookings.book(actor, {
         resourceId: gym.id,
         start: at(DAY),
         end: at(DAY + 45),
@@ -86,7 +88,7 @@ describe('ReportService', () => {
       const gold = await ctx.addPassenger('GOLD');
       await ctx.addPassenger('GOLD');
 
-      const s1 = await ctx.domain.bookings.book(silver.actor, {
+      const { booking: s1 } = await ctx.domain.bookings.book(silver.actor, {
         resourceId: pod.id,
         start: at(0),
         end: at(60),
@@ -131,7 +133,7 @@ describe('ReportService', () => {
     it('excludes cancelled bookings and bookings outside the period', async () => {
       const pod = await ctx.addResource({ capacity: 10 });
       const { actor } = await ctx.addPassenger('SILVER');
-      const c = await ctx.domain.bookings.book(actor, {
+      const { booking: c } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(0),
         end: at(60),

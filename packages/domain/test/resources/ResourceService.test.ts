@@ -128,12 +128,12 @@ describe('ResourceService', () => {
       const pod = await ctx.addResource({ capacity: 5 });
       const silver = await ctx.addPassenger('SILVER');
       const gold = await ctx.addPassenger('GOLD');
-      const lost = await ctx.domain.bookings.book(silver.actor, {
+      const { booking: lost } = await ctx.domain.bookings.book(silver.actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
       });
-      const kept = await ctx.domain.bookings.book(gold.actor, {
+      const { booking: kept } = await ctx.domain.bookings.book(gold.actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
@@ -151,7 +151,7 @@ describe('ResourceService', () => {
     it('revokes pending bookings and blocks new ones', async () => {
       const pod = await ctx.addResource({ capacity: 2 });
       const { actor } = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),

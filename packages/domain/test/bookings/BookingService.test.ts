@@ -19,7 +19,7 @@ describe('BookingService', () => {
     it('books a resource within the passenger tier', async () => {
       const pod = await ctx.addResource();
       const { passenger, actor } = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking, resource } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(120),
@@ -29,6 +29,8 @@ describe('BookingService', () => {
         resourceId: pod.id,
         status: 'CONFIRMED',
       });
+      // The resource as it was checked, so callers can present it without asking again.
+      expect(resource).toMatchObject({ id: pod.id, name: pod.name });
     });
 
     it('lets higher tiers book lower-tier resources', async () => {
@@ -159,7 +161,7 @@ describe('BookingService', () => {
       const a = await ctx.addPassenger('SILVER');
       const b = await ctx.addPassenger('SILVER');
       const slot = { resourceId: pod.id, start: at(60), end: at(120) };
-      const first = await ctx.domain.bookings.book(a.actor, slot);
+      const { booking: first } = await ctx.domain.bookings.book(a.actor, slot);
       await ctx.domain.bookings.cancel(a.actor, first.id);
       await expect(ctx.domain.bookings.book(b.actor, slot)).resolves.toBeDefined();
     });
@@ -199,7 +201,7 @@ describe('BookingService', () => {
       const pod = await ctx.addResource({ capacity: 2 });
       const a = await ctx.addPassenger('SILVER');
       const b = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(a.actor, {
+      const { booking } = await ctx.domain.bookings.book(a.actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
@@ -213,7 +215,7 @@ describe('BookingService', () => {
     it('lets crew leads cancel any booking', async () => {
       const pod = await ctx.addResource();
       const { actor } = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
@@ -232,7 +234,7 @@ describe('BookingService', () => {
     it('starts usage inside the check-in window and audits it', async () => {
       const pod = await ctx.addResource();
       const { actor } = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(30),
         end: at(90),
@@ -255,7 +257,7 @@ describe('BookingService', () => {
         capacity: 2,
       });
       const { passenger, actor } = await ctx.addPassenger('GOLD');
-      const booking = await ctx.domain.bookings.book(actor, {
+      const { booking } = await ctx.domain.bookings.book(actor, {
         resourceId: cabin.id,
         start: at(0),
         end: at(60),
@@ -272,7 +274,7 @@ describe('BookingService', () => {
       const pod = await ctx.addResource();
       const a = await ctx.addPassenger('SILVER');
       const b = await ctx.addPassenger('SILVER');
-      const booking = await ctx.domain.bookings.book(a.actor, {
+      const { booking } = await ctx.domain.bookings.book(a.actor, {
         resourceId: pod.id,
         start: at(0),
         end: at(30),
@@ -287,12 +289,12 @@ describe('BookingService', () => {
     it('lists a passenger’s bookings newest first', async () => {
       const pod = await ctx.addResource({ capacity: 3 });
       const { passenger, actor } = await ctx.addPassenger('SILVER');
-      const early = await ctx.domain.bookings.book(actor, {
+      const { booking: early } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
       });
-      const late = await ctx.domain.bookings.book(actor, {
+      const { booking: late } = await ctx.domain.bookings.book(actor, {
         resourceId: pod.id,
         start: at(120),
         end: at(150),
@@ -314,7 +316,7 @@ describe('BookingService', () => {
       const a = await ctx.addPassenger('SILVER');
       const b = await ctx.addPassenger('SILVER');
       await ctx.domain.bookings.book(a.actor, { resourceId: pod.id, start: at(60), end: at(90) });
-      const cancelled = await ctx.domain.bookings.book(b.actor, {
+      const { booking: cancelled } = await ctx.domain.bookings.book(b.actor, {
         resourceId: pod.id,
         start: at(60),
         end: at(90),
