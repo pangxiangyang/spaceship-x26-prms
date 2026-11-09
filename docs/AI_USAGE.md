@@ -74,8 +74,7 @@ my direction. The decisions that were mine:
 
 ## My review
 
-I'm responsible for everything submitted, so I reviewed the work in two ways before
-submitting.
+I'm responsible for everything submitted, so I reviewed the work in two ways before submitting.
 
 ### Reading the code for structure and extension points
 

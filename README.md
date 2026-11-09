@@ -262,7 +262,7 @@ overlapping, booking limit, wrong state, duplicate username) · `429` too many s
 
 | Suite  | Tests | Style                                                                     |
 | ------ | ----- | ------------------------------------------------------------------------- |
-| domain | 145   | Unit and service tests with a controllable clock, no mocks of the domain  |
+| domain | 149   | Unit and service tests with a controllable clock, no mocks of the domain  |
 | api    | 88    | Integration tests over real HTTP (supertest) and a storage contract suite |
 | web    | 26    | API client, booking dialog, bookings, reports, audit paging, routing      |
 
