@@ -111,4 +111,6 @@ export interface Meta {
     maxAdvanceDays: number;
     checkInLeadMinutes: number;
   };
+  /** Present only on demo deployments. */
+  demo: { accounts: { label: string; username: string; password: string }[] } | null;
 }

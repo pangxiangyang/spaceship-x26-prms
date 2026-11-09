@@ -1,20 +1,17 @@
 import { useState, type FormEvent } from 'react';
+import type { Meta } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { ErrorBanner } from '../components/ui';
-import { useAction } from '../hooks/useApiData';
-
-const DEMO_ACCOUNTS = [
-  { username: 'commander', label: 'Crew Lead', password: 'crewlead123' },
-  { username: 'sam.silver', label: 'Silver passenger', password: 'passenger123' },
-  { username: 'gwen.gold', label: 'Gold passenger', password: 'passenger123' },
-  { username: 'pia.platinum', label: 'Platinum passenger', password: 'passenger123' },
-];
+import { useAction, useApiData } from '../hooks/useApiData';
 
 export function LoginPage() {
   const { login } = useAuth();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const { run, pending, error } = useAction(login);
+  // Demo deployments publish their sign-in details; real ones return `demo: null`.
+  const meta = useApiData((api) => api.get<Meta>('/api/meta'), []);
+  const demoAccounts = meta.data?.demo?.accounts ?? [];
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -56,25 +53,28 @@ export function LoginPage() {
           </button>
         </form>
 
-        <details className="demo-accounts">
-          <summary>Demo accounts</summary>
-          <ul>
-            {DEMO_ACCOUNTS.map((a) => (
-              <li key={a.username}>
-                <button
-                  type="button"
-                  className="link-button"
-                  onClick={() => {
-                    setUsername(a.username);
-                    setPassword(a.password);
-                  }}
-                >
-                  {a.label}: <code>{a.username}</code>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </details>
+        {demoAccounts.length > 0 && (
+          <details className="demo-accounts" open>
+            <summary>Demo accounts</summary>
+            <p className="muted small">Pick a role to fill in its sign-in details.</p>
+            <ul>
+              {demoAccounts.map((account) => (
+                <li key={account.username}>
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => {
+                      setUsername(account.username);
+                      setPassword(account.password);
+                    }}
+                  >
+                    {account.label}: <code>{account.username}</code>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </section>
     </div>
   );

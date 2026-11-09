@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -84,6 +84,25 @@ describe('App', () => {
     await userEvent.type(screen.getByLabelText('Password'), 'wrong');
     await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Invalid username or password.');
+  });
+
+  it('offers the demo sign-in details the server publishes', async () => {
+    renderApp('/login', null, {
+      '/api/meta': {
+        demo: {
+          accounts: [{ label: 'Crew Lead', username: 'commander', password: 'mission-control' }],
+        },
+      },
+    });
+    await userEvent.click(await screen.findByRole('button', { name: /Crew Lead/ }));
+    expect(screen.getByLabelText('Username')).toHaveValue('commander');
+    expect(screen.getByLabelText('Password')).toHaveValue('mission-control');
+  });
+
+  it('shows no demo accounts outside demo mode', async () => {
+    renderApp('/login', null, { '/api/meta': { demo: null } });
+    expect(await screen.findByRole('heading', { name: 'Spaceship X26' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Demo accounts')).not.toBeInTheDocument());
   });
 
   it('shows passengers the resources their tier allows', async () => {
