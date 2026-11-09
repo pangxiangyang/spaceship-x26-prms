@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { ConflictError } from '@prms/domain';
 import { createContainer } from '../src/bootstrap/container';
+import { OffsetClock } from '../src/bootstrap/OffsetClock';
+import { seedDemoData } from '../src/bootstrap/seedDemoData';
 import { resetDemoData } from '../src/bootstrap/resetDemoData';
 import { createApp } from '../src/http/app';
 import { silentLogger } from '../src/http/logger';
@@ -104,5 +107,34 @@ describe('demo reset', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(401);
     expect(res.body.error.code).toBe('UNAUTHENTICATED');
+  });
+});
+
+describe('demo seed', () => {
+  it('records the planned turn-aways as capacity denials', async () => {
+    const persistence = testPersistence();
+    await createContainer(demoConfig(), { persistence, clock: new TestClock() });
+
+    const denials = await persistence.repositories.auditLog.query({
+      action: 'BOOKING_CREATE',
+      outcome: 'DENIED',
+    });
+    expect(denials.items.length).toBeGreaterThan(0);
+    expect(denials.items.every((e) => e.details.reason === 'CAPACITY_EXCEEDED')).toBe(true);
+  });
+
+  it('fails instead of hiding an unexpected error during a planned turn-away', async () => {
+    const persistence = testPersistence();
+    const clock = new OffsetClock(new TestClock());
+    const container = await createContainer(testConfig(), { persistence, clock });
+    const book = container.domain.bookings.book.bind(container.domain.bookings);
+    vi.spyOn(container.domain.bookings, 'book').mockImplementation((actor, input) =>
+      book(actor, input).catch((error: unknown) => {
+        // Storage fails at exactly the moment the seed expects a capacity refusal.
+        throw error instanceof ConflictError ? new Error('storage unavailable') : error;
+      }),
+    );
+
+    await expect(seedDemoData(container, clock)).rejects.toThrow('storage unavailable');
   });
 });

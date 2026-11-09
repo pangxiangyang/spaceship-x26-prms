@@ -1,4 +1,5 @@
 import {
+  ConflictError,
   Role,
   type Actor,
   type MembershipTier,
@@ -170,7 +171,7 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
           ),
         }),
       )
-      .catch(() => undefined); // turned away: recorded as a CAPACITY_EXCEEDED denial
+      .catch(ignoreTurnAway); // turned away: recorded as a CAPACITY_EXCEEDED denial
     await pastSession('lena.platinum', 'VIP Rec Deck', daysAgo, 19, 2);
   }
 
@@ -193,6 +194,12 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
   await upcoming('gwen.gold', 'Private Cabin', 4, 2);
   await upcoming('pia.platinum', 'Luxury O2 Pod', 3, 2);
   await upcoming('raj.platinum', 'Luxury O2 Pod', 3, 2);
+}
+
+/** The seed expects some bookings to be refused for capacity; anything else is a real failure. */
+function ignoreTurnAway(error: unknown): void {
+  if (error instanceof ConflictError && error.code === 'CAPACITY_EXCEEDED') return;
+  throw error;
 }
 
 function startOfUtcHour(date: Date): Date {
