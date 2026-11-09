@@ -1,5 +1,11 @@
 import type { AuditEvent } from '../../audit/AuditEvent';
-import type { AuditLog, AuditPage, AuditQuery } from '../../audit/AuditLog';
+import {
+  matchesAuditQuery,
+  paginate,
+  type AuditLog,
+  type AuditPage,
+  type AuditQuery,
+} from '../../audit/AuditLog';
 
 export class InMemoryAuditLog implements AuditLog {
   private readonly events: AuditEvent[] = [];
@@ -14,19 +20,7 @@ export class InMemoryAuditLog implements AuditLog {
   }
 
   async query(query: AuditQuery): Promise<AuditPage> {
-    const matching = this.events
-      .filter(
-        (e) =>
-          (!query.action || e.action === query.action) &&
-          (!query.outcome || e.outcome === query.outcome) &&
-          (!query.actorId || e.actor.userId === query.actorId) &&
-          (!query.subjectId || e.subject.id === query.subjectId) &&
-          (!query.from || e.occurredAt >= query.from) &&
-          (!query.to || e.occurredAt <= query.to),
-      )
-      .reverse();
-    const offset = query.offset ?? 0;
-    const limit = query.limit ?? matching.length;
-    return { items: matching.slice(offset, offset + limit), total: matching.length };
+    const newestFirst = this.events.filter((e) => matchesAuditQuery(e, query)).reverse();
+    return paginate(newestFirst, query);
   }
 }

@@ -19,6 +19,7 @@ export * from './bookings/BookingPolicy';
 export type { BookingRepository } from './bookings/BookingRepository';
 export * from './bookings/BookingService';
 export * from './audit/AuditEvent';
+export { matchesAuditQuery, paginate } from './audit/AuditLog';
 export type { AuditLog, AuditPage, AuditQuery } from './audit/AuditLog';
 export * from './audit/AuditTrail';
 export * from './audit/AuditService';
