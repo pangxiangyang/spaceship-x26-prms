@@ -5,6 +5,11 @@ import type { UserRepository } from '../../users/UserRepository';
 export class InMemoryUserRepository implements UserRepository {
   private readonly byId = new Map<string, AnyUser>();
 
+  /** Removes everything. Used by the demo reset. */
+  clear(): void {
+    this.byId.clear();
+  }
+
   async findById(id: string): Promise<AnyUser | undefined> {
     return this.byId.get(id);
   }

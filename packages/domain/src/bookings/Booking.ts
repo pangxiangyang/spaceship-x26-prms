@@ -1,6 +1,6 @@
-import type { MembershipTier } from '../membership/MembershipTier';
-import { ConflictError } from '../shared/errors';
-import type { TimeSlot } from './TimeSlot';
+import { isMembershipTier, type MembershipTier } from '../membership/MembershipTier';
+import { ConflictError, ValidationError } from '../shared/errors';
+import { TimeSlot } from './TimeSlot';
 
 export const BookingStatus = {
   CONFIRMED: 'CONFIRMED',
@@ -33,6 +33,24 @@ export interface BookingProps {
   createdAt: Date;
 }
 
+/** Plain-data form of a booking, for persistence adapters. */
+export interface BookingSnapshot {
+  id: string;
+  passengerId: string;
+  resourceId: string;
+  passengerTier: MembershipTier;
+  start: Date;
+  end: Date;
+  createdAt: Date;
+  status: BookingStatus;
+  checkedInAt: Date | null;
+  cancelledAt: Date | null;
+  cancellationReason: CancellationReason | null;
+}
+
+const isCancellationReason = (value: unknown): value is CancellationReason =>
+  Object.values(CancellationReason).includes(value as CancellationReason);
+
 /**
  * A passenger's reservation of a resource for a time slot.
  *
@@ -62,6 +80,51 @@ export class Booking {
 
   static create(props: BookingProps): Booking {
     return new Booking(props);
+  }
+
+  /** Rebuilds a stored booking, re-validating it so corrupt data cannot enter the domain. */
+  static restore(snapshot: BookingSnapshot): Booking {
+    const corrupt = (reason: string) =>
+      new ValidationError(`Stored booking '${snapshot.id}' is invalid: ${reason}.`);
+    if (!isMembershipTier(snapshot.passengerTier)) throw corrupt('unknown passenger tier');
+
+    const booking = new Booking({ ...snapshot, slot: TimeSlot.of(snapshot.start, snapshot.end) });
+    switch (snapshot.status) {
+      case BookingStatus.CONFIRMED:
+        break;
+      case BookingStatus.CHECKED_IN:
+        if (!snapshot.checkedInAt) throw corrupt('checked in without a check-in time');
+        booking._status = BookingStatus.CHECKED_IN;
+        booking._checkedInAt = snapshot.checkedInAt;
+        break;
+      case BookingStatus.CANCELLED:
+        if (!snapshot.cancelledAt || !isCancellationReason(snapshot.cancellationReason)) {
+          throw corrupt('cancelled without a time and reason');
+        }
+        booking._status = BookingStatus.CANCELLED;
+        booking._cancelledAt = snapshot.cancelledAt;
+        booking._cancellationReason = snapshot.cancellationReason;
+        break;
+      default:
+        throw corrupt(`unknown status '${String(snapshot.status)}'`);
+    }
+    return booking;
+  }
+
+  toSnapshot(): BookingSnapshot {
+    return {
+      id: this.id,
+      passengerId: this.passengerId,
+      resourceId: this.resourceId,
+      passengerTier: this.passengerTier,
+      start: this.slot.start,
+      end: this.slot.end,
+      createdAt: this.createdAt,
+      status: this._status,
+      checkedInAt: this._checkedInAt ?? null,
+      cancelledAt: this._cancelledAt ?? null,
+      cancellationReason: this._cancellationReason ?? null,
+    };
   }
 
   get status(): BookingStatus {

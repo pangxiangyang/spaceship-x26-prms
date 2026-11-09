@@ -4,6 +4,11 @@ import type { BookingRepository } from '../../bookings/BookingRepository';
 export class InMemoryBookingRepository implements BookingRepository {
   private readonly byId = new Map<string, Booking>();
 
+  /** Removes everything. Used by the demo reset. */
+  clear(): void {
+    this.byId.clear();
+  }
+
   async findById(id: string): Promise<Booking | undefined> {
     return this.byId.get(id);
   }

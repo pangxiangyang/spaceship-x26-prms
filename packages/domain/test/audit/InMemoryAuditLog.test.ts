@@ -77,3 +77,11 @@ describe('audit log', () => {
     await expect(service.list(passenger, {})).rejects.toThrow(ForbiddenError);
   });
 });
+
+describe('in-memory adapters', () => {
+  it('can be cleared for a demo reset', async () => {
+    const { log } = await setup();
+    log.clear();
+    expect((await log.query({})).total).toBe(0);
+  });
+});

@@ -4,6 +4,11 @@ import type { ResourceRepository } from '../../resources/ResourceRepository';
 export class InMemoryResourceRepository implements ResourceRepository {
   private readonly byId = new Map<string, Resource>();
 
+  /** Removes everything. Used by the demo reset. */
+  clear(): void {
+    this.byId.clear();
+  }
+
   async findById(id: string): Promise<Resource | undefined> {
     return this.byId.get(id);
   }

@@ -28,6 +28,19 @@ export interface ResourceProps extends ResourceSpec {
   createdAt: Date;
 }
 
+/** Plain-data form of a resource, for persistence adapters. */
+export interface ResourceSnapshot {
+  id: string;
+  name: string;
+  description: string;
+  category: ResourceCategory;
+  minTier: MembershipTier;
+  capacity: number;
+  status: ResourceStatus;
+  createdAt: Date;
+  decommissionedAt: Date | null;
+}
+
 /** A bookable piece of ship infrastructure (a pod, a station, a bay, …). */
 export class Resource {
   readonly id: string;
@@ -48,6 +61,36 @@ export class Resource {
 
   static provision(props: ResourceProps): Resource {
     return new Resource(props);
+  }
+
+  /** Rebuilds a stored resource, re-validating it so corrupt data cannot enter the domain. */
+  static restore(snapshot: ResourceSnapshot): Resource {
+    const resource = new Resource(snapshot);
+    if (snapshot.status === ResourceStatus.DECOMMISSIONED) {
+      if (!snapshot.decommissionedAt) {
+        throw new ValidationError(`Stored resource '${snapshot.id}' has no decommission date.`);
+      }
+      resource.decommission(snapshot.decommissionedAt);
+    } else if (snapshot.status !== ResourceStatus.ACTIVE) {
+      throw new ValidationError(
+        `Stored resource '${snapshot.id}' has unknown status '${String(snapshot.status)}'.`,
+      );
+    }
+    return resource;
+  }
+
+  toSnapshot(): ResourceSnapshot {
+    return {
+      id: this.id,
+      name: this._name,
+      description: this._description,
+      category: this._category,
+      minTier: this._minTier,
+      capacity: this._capacity,
+      status: this._status,
+      createdAt: this.createdAt,
+      decommissionedAt: this._decommissionedAt ?? null,
+    };
   }
 
   get name(): string {
