@@ -56,8 +56,9 @@ places per 15-minute block would keep the UI simple.
 
 ## Operations
 
-- **More than one instance.** Move the capacity check into a Firestore transaction (see
-  [DESIGN.md](DESIGN.md#concurrency)).
+- **More than one instance.** Bookings are already safe across instances (see
+  [DESIGN.md](DESIGN.md#concurrency-and-atomicity)). The sign-in rate limiter counts per
+  instance, so it would move to a shared store first.
 - **Replacing a Crew Lead.** The roster is configuration, and start-up registers any missing
   lead. With persistent storage, renaming a lead in the configuration makes start-up fail,
   because the old three still exist and a fourth is refused. That's safe, but a real ship

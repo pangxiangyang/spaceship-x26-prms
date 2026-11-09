@@ -70,7 +70,8 @@ step "Building $IMAGE"
 g builds submit --tag="$IMAGE" .
 
 step "Deploying service $SERVICE"
-# One instance: booking capacity is guarded by an in-process lock (see docs/DESIGN.md).
+# One instance: free while idle, and the sign-in rate limiter counts per instance. Bookings
+# are safe across instances anyway (units of work are Firestore transactions; docs/DESIGN.md).
 g run deploy "$SERVICE" --image="$IMAGE" --region="$REGION" \
   --service-account="$RUNTIME_SA" --allow-unauthenticated \
   --set-env-vars="$ENV_VARS" --set-secrets="$SECRETS" \

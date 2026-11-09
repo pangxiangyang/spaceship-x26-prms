@@ -3,7 +3,6 @@ import { Role, type Actor } from '../identity/Actor';
 import { assertPassenger, assertSelfOrCrewLead } from '../identity/authorization';
 import type { Resource } from '../resources/Resource';
 import type { ResourceRepository } from '../resources/ResourceRepository';
-import type { AsyncMutex } from '../shared/AsyncMutex';
 import {
   ConflictError,
   ForbiddenError,
@@ -12,6 +11,7 @@ import {
   ValidationError,
 } from '../shared/errors';
 import type { Clock, IdGenerator } from '../shared/ports';
+import type { Transaction } from '../shared/UnitOfWork';
 import { findPassengerOrThrow } from '../users/lookups';
 import type { Passenger } from '../users/User';
 import type { UserRepository } from '../users/UserRepository';
@@ -50,8 +50,7 @@ export interface BookingServiceDeps {
   audit: AuditTrail;
   ids: IdGenerator;
   clock: Clock;
-  policy: BookingPolicy;
-  bookingLock: AsyncMutex;
+  policy: Readonly<BookingPolicy>;
 }
 
 /**
@@ -69,31 +68,33 @@ export class BookingService {
         subject: { type: 'RESOURCE', id: input.resourceId },
         details: { start: isoOrNull(input.start), end: isoOrNull(input.end) },
       },
-      () =>
-        // Read-check-write on shared capacity: serialise to prevent double booking.
-        this.deps.bookingLock.runExclusive(async () => {
-          assertPassenger(actor);
-          const now = this.deps.clock.now();
-          const slot = TimeSlot.of(input.start, input.end);
-          this.assertSlotAllowed(slot, now);
+      async (tx) => {
+        assertPassenger(actor);
+        const now = this.deps.clock.now();
+        const slot = TimeSlot.of(input.start, input.end);
+        this.assertSlotAllowed(slot, now);
 
-          const passenger = await findPassengerOrThrow(this.deps.users, actor.userId);
-          const resource = await this.findResourceOrThrow(input.resourceId);
-          this.assertUsable(resource, passenger);
-          await this.assertPassengerIsFree(passenger.id, slot);
-          await this.assertCapacityAvailable(resource, slot);
+        const passenger = await findPassengerOrThrow(tx.users, actor.userId);
+        const resource = await findResourceOrThrow(tx.resources, input.resourceId);
+        this.assertUsable(resource, passenger);
+        // Read-check-write on the resource's capacity and on the passenger's own time:
+        // lock both schedules, so a concurrent booking in any process waits or retries.
+        await tx.lockSchedule({ resourceId: resource.id });
+        await tx.lockSchedule({ passengerId: passenger.id });
+        await this.assertPassengerIsFree(tx, passenger.id, slot);
+        await this.assertCapacityAvailable(tx, resource, slot);
 
-          const booking = Booking.create({
-            id: this.deps.ids.next(),
-            passengerId: passenger.id,
-            resourceId: resource.id,
-            passengerTier: passenger.tier,
-            slot,
-            createdAt: now,
-          });
-          await this.deps.bookings.save(booking);
-          return { booking, resource };
-        }),
+        const booking = Booking.create({
+          id: this.deps.ids.next(),
+          passengerId: passenger.id,
+          resourceId: resource.id,
+          passengerTier: passenger.tier,
+          slot,
+          createdAt: now,
+        });
+        await tx.bookings.save(booking);
+        return { booking, resource };
+      },
       ({ booking }) => ({ details: { bookingId: booking.id } }),
     );
   }
@@ -109,17 +110,16 @@ export class BookingService {
   cancel(actor: Actor, bookingId: string): Promise<Booking> {
     return this.deps.audit.track(
       { actor, action: 'BOOKING_CANCEL', subject: { type: 'BOOKING', id: bookingId } },
-      () =>
-        this.deps.bookingLock.runExclusive(async () => {
-          const booking = await this.findOwnedBookingOrThrow(actor, bookingId);
-          const reason =
-            actor.role === Role.CREW_LEAD
-              ? CancellationReason.CREW_LEAD_REQUEST
-              : CancellationReason.PASSENGER_REQUEST;
-          booking.cancel(this.deps.clock.now(), reason);
-          await this.deps.bookings.save(booking);
-          return booking;
-        }),
+      async (tx) => {
+        const booking = await findOwnedBookingOrThrow(tx, actor, bookingId);
+        const reason =
+          actor.role === Role.CREW_LEAD
+            ? CancellationReason.CREW_LEAD_REQUEST
+            : CancellationReason.PASSENGER_REQUEST;
+        booking.cancel(this.deps.clock.now(), reason);
+        await tx.bookings.save(booking);
+        return booking;
+      },
       (booking) => ({
         details: { reason: booking.cancellationReason ?? null, resourceId: booking.resourceId },
       }),
@@ -133,24 +133,23 @@ export class BookingService {
   checkIn(actor: Actor, bookingId: string): Promise<Booking> {
     return this.deps.audit.track(
       { actor, action: 'USAGE_START', subject: { type: 'BOOKING', id: bookingId } },
-      () =>
-        this.deps.bookingLock.runExclusive(async () => {
-          assertPassenger(actor);
-          const booking = await this.findOwnedBookingOrThrow(actor, bookingId);
-          const passenger = await findPassengerOrThrow(this.deps.users, actor.userId);
-          const resource = await this.findResourceOrThrow(booking.resourceId);
-          this.assertUsable(resource, passenger);
-          booking.checkIn(this.deps.clock.now(), this.deps.policy.checkInLeadMinutes);
-          await this.deps.bookings.save(booking);
-          return booking;
-        }),
+      async (tx) => {
+        assertPassenger(actor);
+        const booking = await findOwnedBookingOrThrow(tx, actor, bookingId);
+        const passenger = await findPassengerOrThrow(tx.users, actor.userId);
+        const resource = await findResourceOrThrow(tx.resources, booking.resourceId);
+        this.assertUsable(resource, passenger);
+        booking.checkIn(this.deps.clock.now(), this.deps.policy.checkInLeadMinutes);
+        await tx.bookings.save(booking);
+        return booking;
+      },
       (booking) => ({ details: { resourceId: booking.resourceId } }),
     );
   }
 
   /** When a resource is busy within a window, without revealing who booked it. */
   async occupancy(actor: Actor, resourceId: string, window: TimeSlot): Promise<ResourceOccupancy> {
-    const resource = await this.findResourceOrThrow(resourceId);
+    const resource = await findResourceOrThrow(this.deps.resources, resourceId);
     if (actor.role === Role.PASSENGER) {
       const passenger = await findPassengerOrThrow(this.deps.users, actor.userId);
       this.assertUsable(resource, passenger);
@@ -191,15 +190,23 @@ export class BookingService {
     }
   }
 
-  private async assertPassengerIsFree(passengerId: string, slot: TimeSlot): Promise<void> {
-    const own = await this.deps.bookings.findByPassenger(passengerId);
+  private async assertPassengerIsFree(
+    tx: Transaction,
+    passengerId: string,
+    slot: TimeSlot,
+  ): Promise<void> {
+    const own = await tx.bookings.findByPassenger(passengerId);
     if (own.some((b) => b.occupiesCapacity && b.slot.overlaps(slot))) {
       throw new ConflictError('BOOKING_OVERLAP', 'You already have a booking during this time.');
     }
   }
 
-  private async assertCapacityAvailable(resource: Resource, slot: TimeSlot): Promise<void> {
-    const existing = (await this.deps.bookings.findByResource(resource.id))
+  private async assertCapacityAvailable(
+    tx: Transaction,
+    resource: Resource,
+    slot: TimeSlot,
+  ): Promise<void> {
+    const existing = (await tx.bookings.findByResource(resource.id))
       .filter((b) => b.occupiesCapacity)
       .map((b) => b.slot);
     if (peakConcurrency(existing, slot) >= resource.capacity) {
@@ -209,21 +216,28 @@ export class BookingService {
       );
     }
   }
+}
 
-  private async findResourceOrThrow(resourceId: string): Promise<Resource> {
-    const resource = await this.deps.resources.findById(resourceId);
-    if (!resource) throw new NotFoundError('Resource', resourceId);
-    return resource;
-  }
+async function findResourceOrThrow(
+  resources: ResourceRepository,
+  resourceId: string,
+): Promise<Resource> {
+  const resource = await resources.findById(resourceId);
+  if (!resource) throw new NotFoundError('Resource', resourceId);
+  return resource;
+}
 
-  private async findOwnedBookingOrThrow(actor: Actor, bookingId: string): Promise<Booking> {
-    const booking = await this.deps.bookings.findById(bookingId);
-    if (!booking) throw new NotFoundError('Booking', bookingId);
-    if (actor.role === Role.PASSENGER && booking.passengerId !== actor.userId) {
-      throw new ForbiddenError('You can only manage your own bookings.');
-    }
-    return booking;
+async function findOwnedBookingOrThrow(
+  tx: Transaction,
+  actor: Actor,
+  bookingId: string,
+): Promise<Booking> {
+  const booking = await tx.bookings.findById(bookingId);
+  if (!booking) throw new NotFoundError('Booking', bookingId);
+  if (actor.role === Role.PASSENGER && booking.passengerId !== actor.userId) {
+    throw new ForbiddenError('You can only manage your own bookings.');
   }
+  return booking;
 }
 
 function isoOrNull(date: Date): string | null {

@@ -1,4 +1,4 @@
-import { createInMemoryRepositories } from '../../src/adapters/in-memory';
+import { createInMemoryStorage } from '../../src/adapters/in-memory';
 import { createPrmsDomain } from '../../src/createPrmsDomain';
 import { Role, type Actor } from '../../src/identity/Actor';
 import type { MembershipTier } from '../../src/membership/MembershipTier';
@@ -14,8 +14,9 @@ export const at = (minutes: number) => new Date(new Date(NOW).getTime() + minute
 
 export async function createTestContext() {
   const clock = new FixedClock(NOW);
-  const repositories = createInMemoryRepositories();
-  const domain = createPrmsDomain({ repositories, clock, ids: new SequentialIds('id') });
+  const storage = createInMemoryStorage();
+  const { repositories } = storage;
+  const domain = createPrmsDomain({ storage, clock, ids: new SequentialIds('id') });
 
   const leads = [];
   for (const name of ['alpha', 'bravo', 'charlie']) {
@@ -44,7 +45,14 @@ export async function createTestContext() {
       ...overrides,
     });
 
-  return { domain, repositories, clock, crewLead, addPassenger, addResource };
+  // Storage hands out copies, so a test reads an entity again to see what was committed.
+  const stored = {
+    booking: async (id: string) => (await repositories.bookings.findById(id))!,
+    resource: async (id: string) => (await repositories.resources.findById(id))!,
+    user: async (id: string) => (await repositories.users.findById(id))!,
+  };
+
+  return { domain, storage, repositories, stored, clock, crewLead, addPassenger, addResource };
 }
 
 export type TestContext = Awaited<ReturnType<typeof createTestContext>>;

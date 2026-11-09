@@ -97,10 +97,10 @@ describe('ResourceService', () => {
       await expect(
         ctx.domain.resources.update(ctx.crewLead, station.id, { capacity: 1 }),
       ).rejects.toThrow(expect.objectContaining({ code: 'CAPACITY_EXCEEDED' }));
-      expect(station.capacity).toBe(3);
+      expect((await ctx.stored.resource(station.id)).capacity).toBe(3);
 
       await ctx.domain.resources.update(ctx.crewLead, station.id, { capacity: 2 });
-      expect(station.capacity).toBe(2);
+      expect((await ctx.stored.resource(station.id)).capacity).toBe(2);
     });
 
     it('ignores past bookings when shrinking capacity', async () => {
@@ -142,8 +142,8 @@ describe('ResourceService', () => {
       const result = await ctx.domain.resources.update(ctx.crewLead, pod.id, { minTier: 'GOLD' });
 
       expect(result.revokedBookingIds).toEqual([lost.id]);
-      expect(lost.cancellationReason).toBe('RESOURCE_TIER_RAISED');
-      expect(kept.status).toBe('CONFIRMED');
+      expect((await ctx.stored.booking(lost.id)).cancellationReason).toBe('RESOURCE_TIER_RAISED');
+      expect((await ctx.stored.booking(kept.id)).status).toBe('CONFIRMED');
     });
   });
 
@@ -160,7 +160,9 @@ describe('ResourceService', () => {
       const result = await ctx.domain.resources.decommission(ctx.crewLead, pod.id);
 
       expect(result.revokedBookingIds).toEqual([booking.id]);
-      expect(booking.cancellationReason).toBe('RESOURCE_DECOMMISSIONED');
+      expect((await ctx.stored.booking(booking.id)).cancellationReason).toBe(
+        'RESOURCE_DECOMMISSIONED',
+      );
       await expect(
         ctx.domain.bookings.book(actor, { resourceId: pod.id, start: at(120), end: at(150) }),
       ).rejects.toThrow(expect.objectContaining({ code: 'RESOURCE_UNAVAILABLE' }));

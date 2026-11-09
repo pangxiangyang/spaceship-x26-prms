@@ -5,11 +5,19 @@ import {
   CrewLead,
   Passenger,
   Resource,
+  Role,
   TimeSlot,
+  createPrmsDomain,
+  type Actor,
   type AuditEvent,
   type AuditQuery,
 } from '@prms/domain';
 import type { Persistence } from '../../src/persistence/Persistence';
+
+const HOUR_MS = 60 * 60 * 1000;
+
+/** A domain instance on shared storage, as a separate server process would build it. */
+const domainOn = (store: Persistence) => createPrmsDomain({ storage: store });
 
 const at = (hhmm: string) => new Date(`2026-03-01T${hhmm}:00.000Z`);
 
@@ -134,6 +142,27 @@ export function describePersistenceContract(
         await expect(users.save(passenger('pax-2', 'ada'))).rejects.toThrow(ConflictError);
         expect(await users.findById('pax-2')).toBeUndefined();
       });
+
+      it('refuses the same username from concurrent writers', async () => {
+        const { users } = store.repositories;
+        const results = await Promise.allSettled([
+          users.save(passenger('pax-1', 'ada')),
+          users.save(passenger('pax-2', 'ada')),
+        ]);
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+        expect((await users.findPassengers()).map((p) => p.username)).toEqual(['ada']);
+      });
+
+      it('refuses a fourth crew lead, even written directly to storage', async () => {
+        const { users } = store.repositories;
+        for (const id of ['lead-1', 'lead-2', 'lead-3']) await users.save(crewLead(id, id));
+        await expect(users.save(crewLead('lead-4', 'lead-4'))).rejects.toMatchObject({
+          code: 'CREW_LEAD_LIMIT_REACHED',
+        });
+        // Saving an existing lead again is an update, not a fourth lead.
+        await expect(users.save(crewLead('lead-1', 'lead-1'))).resolves.toBeUndefined();
+        expect(await users.findCrewLeads()).toHaveLength(3);
+      });
     });
 
     describe('resources', () => {
@@ -254,6 +283,47 @@ export function describePersistenceContract(
         expect((await store.repositories.auditLog.query({})).total).toBe(0);
         expect(await store.credentials.getPasswordHash('pax-1')).toBeUndefined();
         expect(await store.demoSeed.claim(at('08:00'))).toBe(true);
+      });
+    });
+
+    describe('concurrency across processes', () => {
+      it('never overbooks when two processes book the same resource at once', async () => {
+        // Two domain instances on one store behave like two server instances: nothing
+        // in-process (a lock, a cache) can protect capacity, only the store can.
+        const [first, second] = [domainOn(store), domainOn(store)];
+        const lead = await first.crewLeads.register({ username: 'lead', displayName: 'Lead' });
+        const crew: Actor = { userId: lead.id, role: Role.CREW_LEAD };
+        const pod = await first.resources.provision(crew, {
+          name: 'O2 Pod',
+          category: 'OXYGEN',
+          minTier: 'SILVER',
+          capacity: 3,
+        });
+        const passengers: Actor[] = [];
+        for (let i = 0; i < 10; i += 1) {
+          const pax = await first.passengers.create(crew, {
+            username: `pax${i}`,
+            displayName: `Passenger ${i}`,
+            tier: 'SILVER',
+          });
+          passengers.push({ userId: pax.id, role: Role.PASSENGER });
+        }
+        const start = new Date(Math.ceil(Date.now() / HOUR_MS) * HOUR_MS + HOUR_MS);
+        const slot = { resourceId: pod.id, start, end: new Date(start.getTime() + HOUR_MS) };
+
+        const results = await Promise.allSettled(
+          passengers.map((actor, i) => (i % 2 ? first : second).bookings.book(actor, slot)),
+        );
+
+        const refusals = results.filter((r) => r.status === 'rejected');
+        expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(3);
+        for (const refusal of refusals) {
+          expect((refusal as PromiseRejectedResult).reason).toMatchObject({
+            code: 'CAPACITY_EXCEEDED',
+          });
+        }
+        const stored = await store.repositories.bookings.findByResource(pod.id);
+        expect(stored.filter((b) => b.occupiesCapacity)).toHaveLength(3);
       });
     });
   });

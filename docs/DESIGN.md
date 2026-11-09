@@ -4,8 +4,11 @@
 
 Put the rules where they are cheapest to test and hardest to bypass. Every business rule
 lives in `packages/domain`, a framework-free TypeScript package. The API and the web client
-are thin adapters around it. If someone called the domain services from a CLI, a message
-queue or a test, the same permissions and invariants would hold.
+are thin adapters around it. The domain exposes its services, not its storage, so a caller
+from a CLI, a message queue or a test gets the same permissions and invariants. Code that
+holds the storage itself (the API's composition root, the demo seed, tests) could write
+around the services, so storage enforces the two identity invariants too: unique usernames
+and at most three Crew Leads.
 
 ## Layers
 
@@ -41,65 +44,100 @@ queue or a test, the same permissions and invariants would hold.
 
 ## Patterns used, and why
 
-| Pattern                                       | Where                                                       | Why it earns its place                                                                                                                                            |
-| --------------------------------------------- | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Repository**                                | `*Repository` ports + in-memory adapters                    | Storage can change without touching rules. Tests need no database.                                                                                                |
-| **Composition root / DI**                     | `createPrmsDomain`, `createContainer`                       | One place wires collaborators, and services never construct their dependencies.                                                                                   |
-| **Value object**                              | `TimeSlot`                                                  | Interval logic (half-open overlap, clamping, peak concurrency) is subtle, so it lives in one tested place.                                                        |
-| **State machine** (in the entity)             | `Booking`                                                   | Illegal transitions such as cancelling after check-in are impossible to express.                                                                                  |
-| **Policy object**                             | `BookingPolicy`, `DemandThresholds`                         | Operating rules are configuration, not branching code.                                                                                                            |
-| **Execute-around / decorator-style auditing** | `AuditTrail.track(operation, run, describe)`                | Each use case is wrapped once. Success and denial are both recorded without `try/catch` noise in every method, and nothing can skip the audit by returning early. |
-| **Guard clauses**                             | `assertCrewLead`, `assertSelfOrCrewLead`                    | Authorization reads as the first line of each use case.                                                                                                           |
-| **Presenter / DTO**                           | `http/presenters.ts`                                        | API contracts are explicit. Internal fields like password hashes or mutable entities never leak.                                                                  |
-| **Adapter**                                   | `JwtTokenService`, `BcryptPasswordHasher` behind interfaces | Libraries can be swapped, and tests use a cheap bcrypt cost.                                                                                                      |
+| Pattern                                       | Where                                                          | Why it earns its place                                                                                                                                                                                                   |
+| --------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Repository**                                | `*Repository` ports + in-memory adapters                       | Storage can change without touching rules. Tests need no database.                                                                                                                                                       |
+| **Composition root / DI**                     | `createPrmsDomain`, `createContainer`                          | One place wires collaborators, and services never construct their dependencies.                                                                                                                                          |
+| **Value object**                              | `TimeSlot`                                                     | Interval logic (half-open overlap, clamping, peak concurrency) is subtle, so it lives in one tested place.                                                                                                               |
+| **State machine** (in the entity)             | `Booking`                                                      | Illegal transitions such as cancelling after check-in are impossible to express.                                                                                                                                         |
+| **Policy object**                             | `BookingPolicy`, `DemandThresholds`                            | Operating rules are configuration, not branching code.                                                                                                                                                                   |
+| **Execute-around / decorator-style auditing** | `AuditTrail.track(operation, work, describe)`                  | Each use case is wrapped once. Success and denial are both recorded without `try/catch` noise in every method. The SUCCESS event commits in the same unit of work as the change, so no change exists without its record. |
+| **Unit of Work**                              | `UnitOfWork` port, Firestore transactions, the in-memory store | A use case commits all its writes, and its audit record, or none of them, and is isolated from concurrent use cases in any process.                                                                                      |
+| **Guard clauses**                             | `assertCrewLead`, `assertSelfOrCrewLead`                       | Authorization reads as the first line of each use case.                                                                                                                                                                  |
+| **Presenter / DTO**                           | `http/presenters.ts`                                           | API contracts are explicit. Internal fields like password hashes or mutable entities never leak.                                                                                                                         |
+| **Adapter**                                   | `JwtTokenService`, `BcryptPasswordHasher` behind interfaces    | Libraries can be swapped, and tests use a cheap bcrypt cost.                                                                                                                                                             |
 
 Deliberately **not** used: a generic event bus for side effects. Today only two admin
 operations revoke bookings, and an explicit `BookingRevocation` collaborator is easier to
 follow and test than asynchronous subscribers. If more reactions appear (notifications,
 analytics), domain events would be the next step.
 
-## Concurrency
+## Concurrency and atomicity
 
-Booking is a read-check-write sequence: read overlapping bookings, compare with capacity,
-save. Node runs JavaScript on one thread, but every `await` gives another request a chance
-to interleave. All operations that change booking state therefore run through one
-`AsyncMutex` (`bookingLock`): book, cancel, check-in, tier change, resource update and
-decommission. A test fires 10 concurrent requests at a capacity-3 resource and expects
-exactly 3 successes. With the lock removed, all 10 succeed, so the test is known to catch the bug.
+Every use case that changes state runs in one **unit of work** (the `UnitOfWork` port).
+`AuditTrail.track` opens it, the service reads, checks and writes through the transaction it
+is given, and the SUCCESS audit event is appended in the same unit of work. All of it commits
+or none of it does:
 
-The mutex is correct for one process, which is why the Cloud Run service is capped at
-`--max-instances=1`. For a demo-sized ship, one instance handling many concurrent requests is
-plenty. To scale out, the check would move into the database: a Firestore transaction
-that reads the resource's overlapping bookings and writes the new booking. Firestore retries
-the transaction if another writer touched those documents first. That needs a
-"unit of work" port so the booking service can run its read-check-write inside one
-transaction, and then the mutex would be removed. The rules themselves wouldn't change.
+- a booking never exists without its audit record;
+- a downgrade commits together with the bookings it revokes (a Firestore transaction allows
+  500 writes, so about 250 revocations at once);
+- an account and its password hash are written together (a `TransactionHook`).
+
+The guarantee holds across processes, because the storage provides it, not the process:
+
+- **Firestore.** Each unit of work is a Firestore transaction: reads come first, writes are
+  buffered and applied at the end, and Firestore runs the work again after a conflict (up to
+  10 attempts). Booking reads a resource's bookings and the passenger's bookings, so it first
+  locks both schedules by reading and rewriting their documents in `scheduleLocks`. Two
+  units of work that lock the same schedule conflict, so one waits or retries and then sees
+  the other's booking. Tier changes lock the passenger's schedule, and resource updates and
+  decommissioning lock the resource's. Real Firestore also detects the conflict through the
+  bookings query itself (we checked by disabling the lock), but the lock documents make the
+  guarantee explicit instead of relying on how Firestore locks query results.
+- **In memory.** The store owns one lock, so all units of work on it are serialised,
+  whichever domain instance runs them. Writes are buffered and applied only if the work
+  succeeds. Entities are stored as snapshots and handed out as copies, so a failed unit of
+  work leaves nothing behind, not even a changed object in memory.
+
+`persistenceContract.ts › never overbooks when two processes book the same resource at once`
+builds two domain instances on one store and sends 10 bookings at a capacity-3 resource.
+Exactly 3 succeed on both backends. With the old in-process lock, 4 got through.
+
+Because the work may run more than once, it has no side effects outside the transaction. A
+business-rule refusal changes nothing, so its DENIED event is written on its own afterwards.
+Infrastructure failures are not business events: they go to the structured logs
+(`http/errorHandler.ts`), not to the audit trail.
+
+Storage also enforces two invariants itself, in the same transaction as the user it writes:
+unique usernames (a claim document per username in `usernames`) and at most three Crew Leads
+(`system/crewRoster`). Code that holds the storage directly cannot break them either.
+
+**Instances.** The Cloud Run service still runs at most one instance: it costs nothing while
+idle, and the sign-in rate limiter keeps its counts in memory, per instance. Correctness no
+longer depends on that limit. The daily reset job and the old and new revisions that overlap
+during a deploy are writers too, and units of work keep them consistent. The one exception is
+the demo reset itself: it deletes one collection at a time and then reseeds, so a visitor's
+write in those seconds at 04:00 can survive into the fresh data. That is accepted for a demo.
 
 ## Persistence
 
-The domain defines four storage ports. The API package provides two implementations, chosen
-by `STORAGE`:
+The domain defines four repository ports and a unit-of-work port. The in-memory store lives
+in the domain package; the API package adds Firestore and chooses between them with
+`STORAGE`:
 
 - **In-memory** for development and tests: fast, and nothing to set up.
 - **Firestore** for the live demo. Each port maps to one collection (`users`, `resources`,
-  `bookings`, `auditEvents`), plus `credentials` for password hashes and `system` for the
-  demo-seed marker.
+  `bookings`, `auditEvents`), plus `credentials` for password hashes, `usernames` and
+  `scheduleLocks` (see [Concurrency](#concurrency-and-atomicity)) and `system` for the
+  Crew Lead roster and the demo-seed marker.
 
 Choices worth noting:
 
-- **Entities are rebuilt through the domain, not deserialised blindly.** `Resource` and
-  `Booking` expose `toSnapshot()` / `restore()`. `restore()` re-runs the entity's validation,
+- **Entities are rebuilt through the domain, not deserialised blindly.** `User`, `Resource`
+  and `Booking` expose `toSnapshot()` and a restore function. `restore()` re-runs the entity's validation,
   so a corrupt document is rejected at the boundary instead of leaking into business logic.
 - **No index configuration to deploy.** Every query filters on a single field, which
   Firestore serves from its automatic single-field indexes. The audit log pushes its most
   selective filter to Firestore and applies the rest with the same `matchesAuditQuery`
   function the in-memory store uses, so both behave identically.
-- **Integrity where Firestore can guarantee it.** Username uniqueness is a transactional
-  check-and-write. Audit events use `create()`, so an event can never be overwritten.
+- **Integrity in storage.** Username uniqueness and the Crew Lead limit are checked and
+  written in the user's transaction. Audit events use `create()`, so an event can never be
+  overwritten.
 - **One contract, two backends.** `persistenceContract.ts` specifies the behaviour every store
-  must have, and runs against both. The whole API suite can also run on Firestore, which
-  catches what an in-memory store would hide: a service that changes an entity and forgets to
-  save it still "works" in memory, because the store holds the same object.
+  must have, and runs against both. The whole API suite can also run on Firestore. Both
+  stores hand out copies, so a service that changes an entity and forgets to save it fails in
+  memory too, instead of "working" because the store holds the same object.
 - **Start-up is idempotent.** Configured Crew Leads are reconciled on every start (created if
   missing, password updated if the configuration rotated it). Demo data is seeded only by the
   process that wins an atomic `create()` of a marker document, so two instances starting

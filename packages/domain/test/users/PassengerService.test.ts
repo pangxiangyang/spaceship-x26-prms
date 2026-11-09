@@ -40,7 +40,9 @@ describe('PassengerService', () => {
   it('lets passengers read only their own profile', async () => {
     const a = await ctx.addPassenger('SILVER');
     const b = await ctx.addPassenger('SILVER');
-    await expect(ctx.domain.passengers.get(a.actor, a.passenger.id)).resolves.toBe(a.passenger);
+    await expect(ctx.domain.passengers.get(a.actor, a.passenger.id)).resolves.toMatchObject({
+      id: a.passenger.id,
+    });
     await expect(ctx.domain.passengers.get(a.actor, b.passenger.id)).rejects.toThrow(
       ForbiddenError,
     );
@@ -63,7 +65,7 @@ describe('PassengerService', () => {
   it('renames passengers', async () => {
     const { passenger } = await ctx.addPassenger('SILVER');
     await ctx.domain.passengers.rename(ctx.crewLead, passenger.id, 'Dr. Ada');
-    expect(passenger.displayName).toBe('Dr. Ada');
+    expect((await ctx.stored.user(passenger.id)).displayName).toBe('Dr. Ada');
   });
 
   describe('changeTier', () => {
@@ -107,8 +109,8 @@ describe('PassengerService', () => {
 
       expect(result.change).toEqual({ from: 'PLATINUM', to: 'SILVER', direction: 'DOWNGRADE' });
       expect(result.revokedBookingIds.sort()).toEqual([lose1.id, lose2.id].sort());
-      expect(keep.status).toBe('CONFIRMED');
-      expect(lose1.cancellationReason).toBe('TIER_DOWNGRADE');
+      expect((await ctx.stored.booking(keep.id)).status).toBe('CONFIRMED');
+      expect((await ctx.stored.booking(lose1.id)).cancellationReason).toBe('TIER_DOWNGRADE');
 
       const audit = await ctx.domain.audit.list(ctx.crewLead, { action: 'TIER_CHANGE' });
       expect(audit.items[0]?.details).toMatchObject({ direction: 'DOWNGRADE', revokedBookings: 2 });
@@ -126,7 +128,7 @@ describe('PassengerService', () => {
 
       const result = await ctx.domain.passengers.changeTier(ctx.crewLead, passenger.id, 'SILVER');
       expect(result.revokedBookingIds).toEqual([]);
-      expect(booking.status).toBe('CHECKED_IN');
+      expect((await ctx.stored.booking(booking.id)).status).toBe('CHECKED_IN');
     });
 
     it('is crew lead only', async () => {

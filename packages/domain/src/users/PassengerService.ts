@@ -6,9 +6,9 @@ import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertSelfOrCrewLead } from '../identity/authorization';
 import type { MembershipTier } from '../membership/MembershipTier';
 import type { ResourceRepository } from '../resources/ResourceRepository';
-import type { AsyncMutex } from '../shared/AsyncMutex';
 import { ConflictError } from '../shared/errors';
 import type { Clock, IdGenerator } from '../shared/ports';
+import type { Transaction, TransactionHook } from '../shared/UnitOfWork';
 import { findPassengerOrThrow } from './lookups';
 import { Passenger, normalizeUsername, type TierChange } from './User';
 import type { UserRepository } from './UserRepository';
@@ -34,14 +34,21 @@ export interface PassengerServiceDeps {
   audit: AuditTrail;
   ids: IdGenerator;
   clock: Clock;
-  bookingLock: AsyncMutex;
 }
 
 /** Crew Lead management of passenger profiles and membership tiers. */
 export class PassengerService {
   constructor(private readonly deps: PassengerServiceDeps) {}
 
-  async create(actor: Actor, input: CreatePassengerInput): Promise<Passenger> {
+  /**
+   * Creates a passenger profile. `attach` lets the caller store something with the new
+   * account (its credentials) in the same unit of work, so neither exists without the other.
+   */
+  create(
+    actor: Actor,
+    input: CreatePassengerInput,
+    attach?: TransactionHook<Passenger>,
+  ): Promise<Passenger> {
     return this.deps.audit.track(
       {
         actor,
@@ -49,10 +56,10 @@ export class PassengerService {
         subject: { type: 'PASSENGER', id: null },
         details: { username: String(input.username), tier: String(input.tier) },
       },
-      async () => {
+      async (tx) => {
         assertCrewLead(actor);
         const username = normalizeUsername(input.username);
-        if (await this.deps.users.findByUsername(username)) {
+        if (await tx.users.findByUsername(username)) {
           throw new ConflictError('USERNAME_TAKEN', `Username '${username}' is already taken.`);
         }
         const passenger = Passenger.create({
@@ -62,7 +69,8 @@ export class PassengerService {
           tier: input.tier,
           createdAt: this.deps.clock.now(),
         });
-        await this.deps.users.save(passenger);
+        await tx.users.save(passenger);
+        await attach?.(tx, passenger);
         return passenger;
       },
       (passenger) => ({ subjectId: passenger.id }),
@@ -80,14 +88,14 @@ export class PassengerService {
     return findPassengerOrThrow(this.deps.users, passengerId);
   }
 
-  async rename(actor: Actor, passengerId: string, displayName: string): Promise<Passenger> {
+  rename(actor: Actor, passengerId: string, displayName: string): Promise<Passenger> {
     return this.deps.audit.track(
       { actor, action: 'PASSENGER_UPDATE', subject: { type: 'PASSENGER', id: passengerId } },
-      async () => {
+      async (tx) => {
         assertCrewLead(actor);
-        const passenger = await findPassengerOrThrow(this.deps.users, passengerId);
+        const passenger = await findPassengerOrThrow(tx.users, passengerId);
         passenger.rename(displayName);
-        await this.deps.users.save(passenger);
+        await tx.users.save(passenger);
         return passenger;
       },
       (passenger) => ({ details: { displayName: passenger.displayName } }),
@@ -95,52 +103,53 @@ export class PassengerService {
   }
 
   /**
-   * Upgrades or downgrades a passenger. A downgrade immediately revokes pending
-   * bookings for resources the passenger is no longer entitled to.
+   * Upgrades or downgrades a passenger. A downgrade revokes pending bookings for
+   * resources the passenger is no longer entitled to, in the same unit of work.
    */
   changeTier(actor: Actor, passengerId: string, tier: MembershipTier): Promise<TierChangeResult> {
-    return this.deps.bookingLock.runExclusive(() =>
-      this.deps.audit.track(
-        {
-          actor,
-          action: 'TIER_CHANGE',
-          subject: { type: 'PASSENGER', id: passengerId },
-          details: { requestedTier: String(tier) },
-        },
-        async () => {
-          assertCrewLead(actor);
-          const passenger = await findPassengerOrThrow(this.deps.users, passengerId);
-          const change = passenger.changeTier(tier);
-          await this.deps.users.save(passenger);
+    return this.deps.audit.track(
+      {
+        actor,
+        action: 'TIER_CHANGE',
+        subject: { type: 'PASSENGER', id: passengerId },
+        details: { requestedTier: String(tier) },
+      },
+      async (tx) => {
+        assertCrewLead(actor);
+        // The downgrade decides from the passenger's bookings: no booking may slip in meanwhile.
+        await tx.lockSchedule({ passengerId });
+        const passenger = await findPassengerOrThrow(tx.users, passengerId);
+        const change = passenger.changeTier(tier);
+        await tx.users.save(passenger);
 
-          const revoked =
-            change.direction === 'DOWNGRADE'
-              ? await this.revokeNoLongerAccessible(actor, passenger)
-              : [];
-          return { passenger, change, revokedBookingIds: revoked.map((b) => b.id) };
+        const revoked =
+          change.direction === 'DOWNGRADE'
+            ? await this.revokeNoLongerAccessible(tx, actor, passenger)
+            : [];
+        return { passenger, change, revokedBookingIds: revoked.map((b) => b.id) };
+      },
+      ({ change, revokedBookingIds }) => ({
+        details: {
+          from: change.from,
+          to: change.to,
+          direction: change.direction,
+          revokedBookings: revokedBookingIds.length,
         },
-        ({ change, revokedBookingIds }) => ({
-          details: {
-            from: change.from,
-            to: change.to,
-            direction: change.direction,
-            revokedBookings: revokedBookingIds.length,
-          },
-        }),
-      ),
+      }),
     );
   }
 
-  private async revokeNoLongerAccessible(actor: Actor, passenger: Passenger) {
-    const bookings = await this.deps.bookings.findByPassenger(passenger.id);
+  private async revokeNoLongerAccessible(tx: Transaction, actor: Actor, passenger: Passenger) {
+    const bookings = await tx.bookings.findByPassenger(passenger.id);
     const resources = new Map(
-      (await this.deps.resources.findAll()).map((resource) => [resource.id, resource]),
+      (await tx.resources.findAll()).map((resource) => [resource.id, resource]),
     );
     const inaccessible = bookings.filter((booking) => {
       const resource = resources.get(booking.resourceId);
       return resource !== undefined && !resource.isAccessibleTo(passenger.tier);
     });
     return this.deps.revocation.revokePending(
+      tx,
       actor,
       inaccessible,
       CancellationReason.TIER_DOWNGRADE,

@@ -264,6 +264,7 @@ describe('BookingService', () => {
       });
       // Simulate entitlement changing without going through the revoking service.
       passenger.changeTier('SILVER');
+      await ctx.repositories.users.save(passenger);
 
       await expect(ctx.domain.bookings.checkIn(actor, booking.id)).rejects.toThrow(
         TierAccessDeniedError,

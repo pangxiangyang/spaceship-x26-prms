@@ -1,33 +1,26 @@
-import type { AuditLog } from './audit/AuditLog';
 import { AuditService } from './audit/AuditService';
 import { AuditTrail } from './audit/AuditTrail';
 import { DEFAULT_BOOKING_POLICY, type BookingPolicy } from './bookings/BookingPolicy';
-import type { BookingRepository } from './bookings/BookingRepository';
 import { BookingRevocation } from './bookings/BookingRevocation';
 import { BookingService } from './bookings/BookingService';
-import type { ResourceRepository } from './resources/ResourceRepository';
 import { ReportService } from './reporting/ReportService';
 import { ResourceService } from './resources/ResourceService';
-import { AsyncMutex } from './shared/AsyncMutex';
 import { systemClock, uuidGenerator, type Clock, type IdGenerator } from './shared/ports';
+import type { PrmsStorage } from './shared/UnitOfWork';
 import { CrewLeadService } from './users/CrewLeadService';
 import { PassengerService } from './users/PassengerService';
-import type { UserRepository } from './users/UserRepository';
-
-export interface PrmsRepositories {
-  users: UserRepository;
-  resources: ResourceRepository;
-  bookings: BookingRepository;
-  auditLog: AuditLog;
-}
 
 export interface PrmsDomainOptions {
-  repositories: PrmsRepositories;
+  storage: PrmsStorage;
   clock?: Clock;
   ids?: IdGenerator;
   bookingPolicy?: Partial<BookingPolicy>;
 }
 
+/**
+ * The domain's use cases. Storage is deliberately not exposed: every change goes through
+ * a service, so its rules, its unit of work and its audit record always apply.
+ */
 export interface PrmsDomain {
   crewLeads: CrewLeadService;
   passengers: PassengerService;
@@ -35,7 +28,6 @@ export interface PrmsDomain {
   bookings: BookingService;
   audit: AuditService;
   reports: ReportService;
-  repositories: PrmsRepositories;
   clock: Clock;
   /** The booking rules in force (defaults plus any overrides). */
   bookingPolicy: Readonly<BookingPolicy>;
@@ -43,7 +35,7 @@ export interface PrmsDomain {
 
 /** Composition root for the domain: wires services to their collaborators. */
 export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
-  const { repositories } = options;
+  const { repositories, unitOfWork } = options.storage;
   const clock = options.clock ?? systemClock;
   const ids = options.ids ?? uuidGenerator;
   const policy: Readonly<BookingPolicy> = Object.freeze({
@@ -51,11 +43,11 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
     ...options.bookingPolicy,
   });
 
-  // One lock guards every operation that reads and then changes booking state.
-  const bookingLock = new AsyncMutex();
-  const auditTrail = new AuditTrail(repositories.auditLog, clock, ids);
-  const revocation = new BookingRevocation(repositories.bookings, auditTrail, clock);
-  const shared = { ...repositories, audit: auditTrail, ids, clock, bookingLock, revocation };
+  // Every change runs in a unit of work of the storage, which also isolates it from
+  // changes made by other processes; the audit trail writes inside the same unit.
+  const auditTrail = new AuditTrail(unitOfWork, clock, ids);
+  const revocation = new BookingRevocation(auditTrail, clock);
+  const shared = { ...repositories, audit: auditTrail, ids, clock, revocation };
 
   return {
     crewLeads: new CrewLeadService(repositories.users, auditTrail, ids, clock),
@@ -64,7 +56,6 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
     bookings: new BookingService({ ...shared, policy }),
     audit: new AuditService(repositories.auditLog),
     reports: new ReportService({ ...repositories, clock }),
-    repositories,
     clock,
     bookingPolicy: policy,
   };

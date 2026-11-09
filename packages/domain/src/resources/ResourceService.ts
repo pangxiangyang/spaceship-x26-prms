@@ -6,7 +6,6 @@ import { peakConcurrency } from '../bookings/TimeSlot';
 import type { Actor } from '../identity/Actor';
 import { assertCrewLead, assertPassenger } from '../identity/authorization';
 import { compareTiers } from '../membership/MembershipTier';
-import type { AsyncMutex } from '../shared/AsyncMutex';
 import { ConflictError, NotFoundError, TierAccessDeniedError } from '../shared/errors';
 import type { Clock, IdGenerator } from '../shared/ports';
 import { findPassengerOrThrow } from '../users/lookups';
@@ -27,7 +26,6 @@ export interface ResourceServiceDeps {
   audit: AuditTrail;
   ids: IdGenerator;
   clock: Clock;
-  bookingLock: AsyncMutex;
 }
 
 const byTierThenName = (a: Resource, b: Resource) =>
@@ -37,7 +35,7 @@ const byTierThenName = (a: Resource, b: Resource) =>
 export class ResourceService {
   constructor(private readonly deps: ResourceServiceDeps) {}
 
-  async provision(actor: Actor, spec: ResourceSpec): Promise<Resource> {
+  provision(actor: Actor, spec: ResourceSpec): Promise<Resource> {
     return this.deps.audit.track(
       {
         actor,
@@ -45,14 +43,14 @@ export class ResourceService {
         subject: { type: 'RESOURCE', id: null },
         details: { name: String(spec.name), minTier: String(spec.minTier) },
       },
-      async () => {
+      async (tx) => {
         assertCrewLead(actor);
         const resource = Resource.provision({
           ...spec,
           id: this.deps.ids.next(),
           createdAt: this.deps.clock.now(),
         });
-        await this.deps.resources.save(resource);
+        await tx.resources.save(resource);
         return resource;
       },
       (resource) => ({ subjectId: resource.id, details: { capacity: resource.capacity } }),
@@ -75,7 +73,7 @@ export class ResourceService {
   }
 
   async get(actor: Actor, resourceId: string): Promise<Resource> {
-    const resource = await this.findOrThrow(resourceId);
+    const resource = await findOrThrow(this.deps.resources, resourceId);
     if (actor.role === 'CREW_LEAD') return resource;
 
     assertPassenger(actor);
@@ -92,89 +90,90 @@ export class ResourceService {
   /**
    * Edits a resource. Reducing capacity is refused if upcoming bookings would no
    * longer fit; raising the minimum tier revokes pending bookings of passengers
-   * who lose access.
+   * who lose access, in the same unit of work.
    */
   update(
     actor: Actor,
     resourceId: string,
     changes: ResourceChanges,
   ): Promise<ResourceUpdateResult> {
-    return this.deps.bookingLock.runExclusive(() =>
-      this.deps.audit.track(
-        {
-          actor,
-          action: 'RESOURCE_UPDATE',
-          subject: { type: 'RESOURCE', id: resourceId },
-          details: { changes: Object.keys(changes).sort().join(',') },
-        },
-        async () => {
-          assertCrewLead(actor);
-          const resource = await this.findOrThrow(resourceId);
-          const now = this.deps.clock.now();
-          const bookings = await this.deps.bookings.findByResource(resourceId);
-          const upcoming = bookings.filter((b) => b.occupiesCapacity && !b.slot.hasEnded(now));
+    return this.deps.audit.track(
+      {
+        actor,
+        action: 'RESOURCE_UPDATE',
+        subject: { type: 'RESOURCE', id: resourceId },
+        details: { changes: Object.keys(changes).sort().join(',') },
+      },
+      async (tx) => {
+        assertCrewLead(actor);
+        // Both checks below decide from the resource's bookings: keep new ones out meanwhile.
+        await tx.lockSchedule({ resourceId });
+        const resource = await findOrThrow(tx.resources, resourceId);
+        const now = this.deps.clock.now();
+        const bookings = await tx.bookings.findByResource(resourceId);
+        const upcoming = bookings.filter((b) => b.occupiesCapacity && !b.slot.hasEnded(now));
 
-          if (changes.capacity !== undefined && changes.capacity < resource.capacity) {
-            const peak = peakConcurrency(upcoming.map((b) => b.slot));
-            if (peak > changes.capacity) {
-              throw new ConflictError(
-                'CAPACITY_EXCEEDED',
-                `Capacity cannot drop to ${changes.capacity}: ${peak} upcoming bookings overlap.`,
-              );
-            }
+        if (changes.capacity !== undefined && changes.capacity < resource.capacity) {
+          const peak = peakConcurrency(upcoming.map((b) => b.slot));
+          if (peak > changes.capacity) {
+            throw new ConflictError(
+              'CAPACITY_EXCEEDED',
+              `Capacity cannot drop to ${changes.capacity}: ${peak} upcoming bookings overlap.`,
+            );
           }
+        }
 
-          const previousMinTier = resource.minTier;
-          resource.update(changes);
-          await this.deps.resources.save(resource);
+        const previousMinTier = resource.minTier;
+        resource.update(changes);
+        await tx.resources.save(resource);
 
-          let revoked: string[] = [];
-          if (compareTiers(resource.minTier, previousMinTier) > 0) {
-            const losingAccess = [];
-            for (const booking of upcoming) {
-              const passenger = await findPassengerOrThrow(this.deps.users, booking.passengerId);
-              if (!resource.isAccessibleTo(passenger.tier)) losingAccess.push(booking);
-            }
-            revoked = (
-              await this.deps.revocation.revokePending(
-                actor,
-                losingAccess,
-                CancellationReason.RESOURCE_TIER_RAISED,
-              )
-            ).map((b) => b.id);
+        let revoked: string[] = [];
+        if (compareTiers(resource.minTier, previousMinTier) > 0) {
+          const losingAccess = [];
+          for (const booking of upcoming) {
+            const passenger = await findPassengerOrThrow(tx.users, booking.passengerId);
+            if (!resource.isAccessibleTo(passenger.tier)) losingAccess.push(booking);
           }
-          return { resource, revokedBookingIds: revoked };
-        },
-        ({ revokedBookingIds }) => ({ details: { revokedBookings: revokedBookingIds.length } }),
-      ),
+          revoked = (
+            await this.deps.revocation.revokePending(
+              tx,
+              actor,
+              losingAccess,
+              CancellationReason.RESOURCE_TIER_RAISED,
+            )
+          ).map((b) => b.id);
+        }
+        return { resource, revokedBookingIds: revoked };
+      },
+      ({ revokedBookingIds }) => ({ details: { revokedBookings: revokedBookingIds.length } }),
     );
   }
 
-  /** Takes a resource out of service and revokes its pending bookings. */
+  /** Takes a resource out of service and revokes its pending bookings, in one unit of work. */
   decommission(actor: Actor, resourceId: string): Promise<ResourceUpdateResult> {
-    return this.deps.bookingLock.runExclusive(() =>
-      this.deps.audit.track(
-        { actor, action: 'RESOURCE_DECOMMISSION', subject: { type: 'RESOURCE', id: resourceId } },
-        async () => {
-          assertCrewLead(actor);
-          const resource = await this.findOrThrow(resourceId);
-          resource.decommission(this.deps.clock.now());
-          await this.deps.resources.save(resource);
-          const revoked = await this.deps.revocation.revokePending(
-            actor,
-            await this.deps.bookings.findByResource(resourceId),
-            CancellationReason.RESOURCE_DECOMMISSIONED,
-          );
-          return { resource, revokedBookingIds: revoked.map((b) => b.id) };
-        },
-        ({ revokedBookingIds }) => ({ details: { revokedBookings: revokedBookingIds.length } }),
-      ),
+    return this.deps.audit.track(
+      { actor, action: 'RESOURCE_DECOMMISSION', subject: { type: 'RESOURCE', id: resourceId } },
+      async (tx) => {
+        assertCrewLead(actor);
+        await tx.lockSchedule({ resourceId });
+        const resource = await findOrThrow(tx.resources, resourceId);
+        resource.decommission(this.deps.clock.now());
+        await tx.resources.save(resource);
+        const revoked = await this.deps.revocation.revokePending(
+          tx,
+          actor,
+          await tx.bookings.findByResource(resourceId),
+          CancellationReason.RESOURCE_DECOMMISSIONED,
+        );
+        return { resource, revokedBookingIds: revoked.map((b) => b.id) };
+      },
+      ({ revokedBookingIds }) => ({ details: { revokedBookings: revokedBookingIds.length } }),
     );
   }
+}
 
-  private async findOrThrow(resourceId: string): Promise<Resource> {
-    const resource = await this.deps.resources.findById(resourceId);
-    if (!resource) throw new NotFoundError('Resource', resourceId);
-    return resource;
-  }
+async function findOrThrow(resources: ResourceRepository, resourceId: string): Promise<Resource> {
+  const resource = await resources.findById(resourceId);
+  if (!resource) throw new NotFoundError('Resource', resourceId);
+  return resource;
 }

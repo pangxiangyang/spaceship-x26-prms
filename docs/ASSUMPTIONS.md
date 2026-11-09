@@ -86,17 +86,17 @@ These values live in one place (`BookingPolicy`) and can be changed without touc
 
 ## Live demo
 
-| Question                             | Decision                                                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Where is data stored?                | Firestore (Native mode) in `asia-southeast1`, the same region as the Cloud Run service.                                                           |
-| Demo credentials                     | Published on the login page (demo mode only). The Crew Lead password lives in Secret Manager like a real one, but its value is public on purpose. |
-| Keeping the demo fresh               | A scheduled job wipes and reseeds daily at 04:00 Singapore time. Anything visitors change lasts until then.                                       |
-| Instances                            | At most one: capacity checks rely on an in-process lock (see DESIGN.md).                                                                          |
-| Visitors interfering with each other | Accepted for a shared demo. The daily reset bounds the damage.                                                                                    |
+| Question                             | Decision                                                                                                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where is data stored?                | Firestore (Native mode) in `asia-southeast1`, the same region as the Cloud Run service.                                                            |
+| Demo credentials                     | Published on the login page (demo mode only). The Crew Lead password lives in Secret Manager like a real one, but its value is public on purpose.  |
+| Keeping the demo fresh               | A scheduled job wipes and reseeds daily at 04:00 Singapore time. Anything visitors change lasts until then.                                        |
+| Instances                            | At most one, to stay free while idle and because the sign-in rate limiter counts per instance. Bookings are safe across instances (see DESIGN.md). |
+| Visitors interfering with each other | Accepted for a shared demo. The daily reset bounds the damage.                                                                                     |
 
 ## Out of scope
 
-- Multi-instance deployment (the booking lock is in-process)
+- A shared sign-in rate limiter for several instances
 - Password reset, account deactivation, token revocation
 - Recurring bookings, waitlists, notifications
 - Time zones beyond the browser's local zone for display (all API times are ISO-8601 UTC)

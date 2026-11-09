@@ -8,7 +8,10 @@ import {
   type Passenger,
   type PrmsDomain,
   type RegisterCrewLeadInput,
+  type TransactionHook,
+  type UserRepository,
 } from '@prms/domain';
+import type { Persistence } from '../persistence/Persistence';
 import { AuthenticationError } from './AuthenticationError';
 import type { CredentialStore } from './CredentialStore';
 import type { PasswordHasher } from './PasswordHasher';
@@ -34,13 +37,18 @@ export class AuthService {
 
   constructor(
     private readonly domain: PrmsDomain,
-    private readonly credentials: CredentialStore,
+    private readonly users: UserRepository,
+    private readonly storage: Pick<Persistence, 'credentials' | 'credentialsIn'>,
     private readonly hasher: PasswordHasher,
     private readonly tokens: TokenService,
   ) {}
 
+  private get credentials(): CredentialStore {
+    return this.storage.credentials;
+  }
+
   async login(username: string, password: string): Promise<LoginResult> {
-    const user = await this.domain.repositories.users.findByUsername(username);
+    const user = await this.users.findByUsername(username);
     // Unknown usernames make the same reads and a comparison against a dummy hash, so
     // response times do not reveal which usernames exist.
     const hash = await this.credentials.getPasswordHash(user?.id ?? NO_SUCH_ACCOUNT_ID);
@@ -52,7 +60,7 @@ export class AuthService {
   }
 
   async currentUser(actor: Actor): Promise<AnyUser> {
-    const user = await this.domain.repositories.users.findById(actor.userId);
+    const user = await this.users.findById(actor.userId);
     if (!user || user.role !== actor.role) {
       throw new AuthenticationError('Your account no longer exists.');
     }
@@ -61,9 +69,9 @@ export class AuthService {
 
   async registerCrewLead(input: RegisterCrewLeadInput & { password: string }): Promise<CrewLead> {
     assertPasswordPolicy(input.password);
-    const lead = await this.domain.crewLeads.register(input);
-    await this.credentials.setPasswordHash(lead.id, await this.hasher.hash(input.password));
-    return lead;
+    // Hash first: the unit of work may run more than once and should stay short.
+    const hash = await this.hasher.hash(input.password);
+    return this.domain.crewLeads.register(input, this.storePassword(hash));
   }
 
   /**
@@ -73,7 +81,7 @@ export class AuthService {
    * registered through the domain, which still enforces the limit of three.
    */
   async ensureCrewLead(input: RegisterCrewLeadInput & { password: string }): Promise<CrewLead> {
-    const existing = await this.domain.repositories.users.findByUsername(input.username);
+    const existing = await this.users.findByUsername(input.username);
     if (!existing) return this.registerCrewLead(input);
     if (!(existing instanceof CrewLead)) {
       throw new ConflictError(
@@ -94,9 +102,13 @@ export class AuthService {
     input: CreatePassengerInput & { password: string },
   ): Promise<Passenger> {
     assertPasswordPolicy(input.password);
-    const passenger = await this.domain.passengers.create(actor, input);
-    await this.credentials.setPasswordHash(passenger.id, await this.hasher.hash(input.password));
-    return passenger;
+    const hash = await this.hasher.hash(input.password);
+    return this.domain.passengers.create(actor, input, this.storePassword(hash));
+  }
+
+  /** Stores the password with the new account, in its unit of work: both exist, or neither. */
+  private storePassword(hash: string): TransactionHook<AnyUser> {
+    return (tx, account) => this.storage.credentialsIn(tx).setPasswordHash(account.id, hash);
   }
 
   private getDummyHash(): Promise<string> {

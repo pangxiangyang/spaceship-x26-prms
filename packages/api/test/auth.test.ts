@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { Role } from '@prms/domain';
 import { createContainer } from '../src/bootstrap/container';
 import { createTestApp, testConfig, testPersistence } from './support/testApp';
 
@@ -36,6 +37,27 @@ describe('authentication', () => {
 
     // Different storage round trips would let response times reveal which usernames exist.
     expect(reads.mock.calls.length).toBe(forKnownUser);
+  });
+
+  it('creates no account when its password cannot be stored', async () => {
+    const persistence = testPersistence();
+    const { auth } = await createContainer(testConfig(), { persistence });
+    const lead = await persistence.repositories.users.findByUsername('commander');
+    vi.spyOn(persistence, 'credentialsIn').mockReturnValue({
+      setPasswordHash: async () => {
+        throw new Error('credential store unavailable');
+      },
+      getPasswordHash: async () => undefined,
+    });
+
+    await expect(
+      auth.createPassengerAccount(
+        { userId: lead!.id, role: Role.CREW_LEAD },
+        { username: 'ada', displayName: 'Ada', tier: 'SILVER', password: 'passenger123' },
+      ),
+    ).rejects.toThrow('credential store unavailable');
+    // Otherwise the username would be taken for good by an account nobody can sign in to.
+    expect(await persistence.repositories.users.findByUsername('ada')).toBeUndefined();
   });
 
   it('validates the login payload', async () => {

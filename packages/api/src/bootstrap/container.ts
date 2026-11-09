@@ -44,14 +44,14 @@ export async function createContainer(
   const persistence = overrides.persistence ?? createPersistence(config.storage);
   const clock = new OffsetClock(overrides.clock);
   const domain = createPrmsDomain({
-    repositories: persistence.repositories,
+    storage: persistence,
     clock,
     ...(overrides.ids ? { ids: overrides.ids } : {}),
     ...(overrides.bookingPolicy ? { bookingPolicy: overrides.bookingPolicy } : {}),
   });
   const tokens = new JwtTokenService(config.jwtSecret, config.tokenTtlSeconds);
   const hasher = overrides.hasher ?? new BcryptPasswordHasher(config.bcryptCost);
-  const auth = new AuthService(domain, persistence.credentials, hasher, tokens);
+  const auth = new AuthService(domain, persistence.repositories.users, persistence, hasher, tokens);
 
   for (const lead of config.crewLeads) {
     await auth.ensureCrewLead(lead);

@@ -125,7 +125,7 @@ What it sets up:
 - A **runtime service account** with only `datastore.user` and access to its two secrets
   (`JWT_SECRET`, the Crew Lead roster) in **Secret Manager**.
 - The **Cloud Run service**: public, scales to zero, at most one instance (see
-  [docs/DESIGN.md](docs/DESIGN.md#concurrency) for why).
+  [docs/DESIGN.md](docs/DESIGN.md#concurrency-and-atomicity) for why).
 - A **Cloud Run job** running the same image with `reset-demo.js`, and a **Cloud Scheduler**
   trigger with its own service account that is only allowed to run that job.
 
@@ -139,8 +139,9 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 
 - **Crew Lead enforcement.** Exactly three Crew Leads. The roster is defined in
   configuration only; there is no API to add administrators. Registering a fourth is
-  rejected with `CREW_LEAD_LIMIT_REACHED`, even when registrations race, and the attempt
-  is audited. The server will not boot with fewer or more than three.
+  rejected with `CREW_LEAD_LIMIT_REACHED`, and the attempt is audited. Storage enforces
+  the limit too, in the same transaction as the write, so it holds even when registrations
+  race or code writes to storage directly. The server will not boot with fewer or more than three.
 - **Resource definition.** Each resource has a category, a **minimum tier** and a
   **capacity** (how many passengers can use it at once). The seed follows the brief: Food
   Stations, Sleeping Pods and Basic Hygiene are Silver; Private Cabins and the Advanced
@@ -268,9 +269,11 @@ production bundle as a smoke test.
 
 Some tests worth reading:
 
-- `BookingService.test.ts › never overbooks under concurrent requests`: 10 simultaneous
-  requests on a capacity-3 resource produce exactly 3 bookings. With the lock removed,
-  this test fails and all 10 succeed.
+- `persistenceContract.ts › never overbooks when two processes book the same resource at once`:
+  two domain instances on one store (like two servers) send 10 bookings at a capacity-3
+  resource, and exactly 3 succeed, in memory and on Firestore.
+- `atomicUseCases.test.ts`: a booking whose audit record can't be written is not stored, and
+  a downgrade that fails partway through changes nothing.
 - `TimeSlot.test.ts › counts simultaneous use, not the number of overlapping bookings`
 - `PassengerService.test.ts › on downgrade, revokes only pending bookings the new tier no longer covers`
 - `ReportService.test.ts › groups usage by the tier held at booking time`
@@ -283,9 +286,12 @@ Some tests worth reading:
 Product ideas (a deck map of the ship, an availability timeline when booking) and other
 follow-ups are described in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
-- **One instance.** Booking capacity is protected by an in-process lock, so the Cloud Run
-  service runs at most one instance. Scaling out means moving that check into a Firestore
-  transaction on the resource. [docs/DESIGN.md](docs/DESIGN.md#concurrency) describes how.
+- **One instance, by choice.** Bookings are safe across processes (each use case is a
+  Firestore transaction), but the service runs one instance to stay free while idle, and
+  the sign-in rate limiter counts per instance. A shared limiter store would come first when
+  scaling out. See [docs/DESIGN.md](docs/DESIGN.md#concurrency-and-atomicity).
+- The demo reset deletes and reseeds one collection at a time, so a write made in those
+  seconds can survive the reset. Accepted for a demo.
 - Audit and report queries filter part of the data in memory. That's fine for one ship, but
   at scale it would need composite indexes, cursor paging and database-side aggregation.
 - Passwords are set by Crew Leads at creation. There's no self-service reset yet.

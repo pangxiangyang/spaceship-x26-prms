@@ -1,6 +1,7 @@
 // Public API of the PRMS domain. Delivery layers depend on this module only.
 export * from './shared/errors';
 export * from './shared/ports';
+export * from './shared/UnitOfWork';
 export { AsyncMutex } from './shared/AsyncMutex';
 export * from './membership/MembershipTier';
 export * from './identity/Actor';

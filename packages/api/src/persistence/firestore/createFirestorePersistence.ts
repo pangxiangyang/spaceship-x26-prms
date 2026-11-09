@@ -1,11 +1,11 @@
 import type { Firestore } from '@google-cloud/firestore';
 import type { Persistence } from '../Persistence';
 import {
-  FirestoreAuditLog,
-  FirestoreBookingRepository,
   FirestoreCredentialStore,
-  FirestoreResourceRepository,
-  FirestoreUserRepository,
+  FirestoreTransactionContext,
+  FirestoreUnitOfWork,
+  directRepositories,
+  type FirestoreCollections,
 } from './firestoreRepositories';
 
 const COLLECTIONS = [
@@ -15,7 +15,9 @@ const COLLECTIONS = [
   'auditEvents',
   'credentials',
   'system',
-] as const;
+  'usernames',
+  'scheduleLocks',
+] as const satisfies readonly (keyof FirestoreCollections)[];
 
 /** gRPC status returned when `create` finds an existing document. */
 const ALREADY_EXISTS = 6;
@@ -30,19 +32,23 @@ export function createFirestorePersistence(db: Firestore, collectionPrefix = '')
   if (!PREFIX_PATTERN.test(collectionPrefix)) {
     throw new Error('Firestore collection prefix may contain only letters, digits, "_" and "-".');
   }
-  const collection = (name: (typeof COLLECTIONS)[number]) =>
-    db.collection(`${collectionPrefix}${name}`);
-  const demoSeedDoc = collection('system').doc('demoSeed');
+  const collections = Object.fromEntries(
+    COLLECTIONS.map((name) => [name, db.collection(`${collectionPrefix}${name}`)]),
+  ) as unknown as FirestoreCollections;
+  const unitOfWork = new FirestoreUnitOfWork(db, collections);
+  const demoSeedDoc = collections.system.doc('demoSeed');
 
   return {
     kind: 'firestore',
-    repositories: {
-      users: new FirestoreUserRepository(db, collection('users')),
-      resources: new FirestoreResourceRepository(collection('resources')),
-      bookings: new FirestoreBookingRepository(collection('bookings')),
-      auditLog: new FirestoreAuditLog(collection('auditEvents')),
+    repositories: directRepositories(collections, unitOfWork),
+    unitOfWork,
+    credentials: new FirestoreCredentialStore(collections.credentials),
+    credentialsIn: (tx) => {
+      if (!(tx instanceof FirestoreTransactionContext)) {
+        throw new Error('Not a unit of work of this storage.');
+      }
+      return tx.credentials;
     },
-    credentials: new FirestoreCredentialStore(collection('credentials')),
     demoSeed: {
       // `create` is atomic: if two instances start at once, only one seeds.
       claim: async (at) => {
@@ -57,7 +63,7 @@ export function createFirestorePersistence(db: Firestore, collectionPrefix = '')
     },
     wipe: async () => {
       for (const name of COLLECTIONS) {
-        await db.recursiveDelete(collection(name));
+        await db.recursiveDelete(collections[name]);
       }
     },
     close: () => db.terminate(),

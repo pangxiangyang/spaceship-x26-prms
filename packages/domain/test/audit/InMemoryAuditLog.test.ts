@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryAuditLog } from '../../src/adapters/in-memory/InMemoryAuditLog';
+import { createInMemoryStorage } from '../../src/adapters/in-memory';
 import { AuditTrail } from '../../src/audit/AuditTrail';
 import { AuditService } from '../../src/audit/AuditService';
 import { Role } from '../../src/identity/Actor';
@@ -12,8 +12,9 @@ const passenger = { userId: 'pax-1', role: Role.PASSENGER };
 
 const setup = async () => {
   const clock = new FixedClock('2026-03-01T00:00:00Z');
-  const log = new InMemoryAuditLog();
-  const trail = new AuditTrail(log, clock, new SequentialIds('evt'));
+  const storage = createInMemoryStorage();
+  const log = storage.repositories.auditLog;
+  const trail = new AuditTrail(storage.unitOfWork, clock, new SequentialIds('evt'));
   await trail.record({
     actor: passenger,
     action: 'BOOKING_CREATE',
@@ -33,7 +34,7 @@ const setup = async () => {
     outcome: 'DENIED',
     subject: { type: 'RESOURCE', id: 'res-2' },
   });
-  return { log, service: new AuditService(log) };
+  return { storage, log, service: new AuditService(log) };
 };
 
 describe('audit log', () => {
@@ -80,8 +81,8 @@ describe('audit log', () => {
 
 describe('in-memory adapters', () => {
   it('can be cleared for a demo reset', async () => {
-    const { log } = await setup();
-    log.clear();
+    const { storage, log } = await setup();
+    storage.clear();
     expect((await log.query({})).total).toBe(0);
   });
 });

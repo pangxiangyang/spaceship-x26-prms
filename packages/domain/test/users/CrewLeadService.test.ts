@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CrewLeadService, REQUIRED_CREW_LEAD_COUNT } from '../../src/users/CrewLeadService';
-import { InMemoryUserRepository } from '../../src/adapters/in-memory/InMemoryUserRepository';
-import { InMemoryAuditLog } from '../../src/adapters/in-memory/InMemoryAuditLog';
+import { createInMemoryStorage } from '../../src/adapters/in-memory';
+import type { AuditLog } from '../../src/audit/AuditLog';
 import { AuditTrail } from '../../src/audit/AuditTrail';
 import { Role } from '../../src/identity/Actor';
 import { ConflictError, CrewRosterError, ForbiddenError } from '../../src/shared/errors';
@@ -9,16 +9,17 @@ import { FixedClock } from '../support/FixedClock';
 import { SequentialIds } from '../support/SequentialIds';
 
 describe('CrewLeadService', () => {
-  let auditLog: InMemoryAuditLog;
+  let auditLog: AuditLog;
   let service: CrewLeadService;
 
   beforeEach(() => {
     const clock = new FixedClock('2026-03-01T00:00:00Z');
     const ids = new SequentialIds('crew');
-    auditLog = new InMemoryAuditLog();
+    const storage = createInMemoryStorage();
+    auditLog = storage.repositories.auditLog;
     service = new CrewLeadService(
-      new InMemoryUserRepository(),
-      new AuditTrail(auditLog, clock, new SequentialIds('audit')),
+      storage.repositories.users,
+      new AuditTrail(storage.unitOfWork, clock, new SequentialIds('audit')),
       ids,
       clock,
     );

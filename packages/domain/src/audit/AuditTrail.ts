@@ -1,5 +1,6 @@
 import { DomainError } from '../shared/errors';
 import type { Clock, IdGenerator } from '../shared/ports';
+import type { Transaction, UnitOfWork } from '../shared/UnitOfWork';
 import type {
   AuditAction,
   AuditActorRef,
@@ -8,7 +9,6 @@ import type {
   AuditOutcome,
   AuditSubjectType,
 } from './AuditEvent';
-import type { AuditLog } from './AuditLog';
 
 type Details = Record<string, AuditDetailValue>;
 
@@ -28,42 +28,53 @@ export interface AuditOutcomeDetails {
   details?: Details;
 }
 
-/** Builds well-formed, immutable audit events and appends them to the log. */
+/**
+ * Builds well-formed, immutable audit events and writes them: inside the unit of work of
+ * the change they describe, or on their own for an attempt that changed nothing.
+ */
 export class AuditTrail {
   constructor(
-    private readonly log: AuditLog,
+    private readonly unitOfWork: UnitOfWork,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
   ) {}
 
-  async record(input: AuditRecordInput): Promise<AuditEvent> {
-    const event: AuditEvent = Object.freeze({
-      id: this.ids.next(),
-      occurredAt: this.clock.now(),
-      actor: Object.freeze({ userId: input.actor.userId, role: input.actor.role }),
-      action: input.action,
-      outcome: input.outcome ?? 'SUCCESS',
-      subject: Object.freeze({ ...input.subject }),
-      details: Object.freeze({ ...(input.details ?? {}) }),
-    });
-    await this.log.append(event);
+  /** Appends an event as part of `tx`, so it commits (or not) with the change it describes. */
+  async append(tx: Transaction, input: AuditRecordInput): Promise<AuditEvent> {
+    const event = this.build(input);
+    await tx.auditLog.append(event);
     return event;
   }
 
+  /** Records an event on its own, for an attempt that changed nothing. */
+  record(input: AuditRecordInput): Promise<AuditEvent> {
+    return this.unitOfWork.run((tx) => this.append(tx, input));
+  }
+
   /**
-   * Runs `operation` and records exactly one audit event for it: SUCCESS with the
-   * details the operation describes, or DENIED with the business-rule code that
-   * stopped it. Services use this so auditing never clutters business logic and
-   * no interaction can bypass the trail.
+   * Runs `work` in one unit of work and records exactly one audit event for it. On
+   * success the SUCCESS event commits in the same unit of work as the change, so a change
+   * can never exist without its record. A business-rule refusal changes nothing, so its
+   * DENIED event (with the rule's code) is written afterwards on its own. Infrastructure
+   * failures are not business events: they go to the structured logs, not the trail.
    */
   async track<T>(
     operation: TrackedOperation,
-    run: () => Promise<T>,
+    work: (tx: Transaction) => Promise<T>,
     describe: (result: T) => AuditOutcomeDetails = () => ({}),
   ): Promise<T> {
-    let result: T;
     try {
-      result = await run();
+      return await this.unitOfWork.run(async (tx) => {
+        const result = await work(tx);
+        const outcome = describe(result);
+        await this.append(tx, {
+          ...operation,
+          outcome: 'SUCCESS',
+          subject: { type: operation.subject.type, id: outcome.subjectId ?? operation.subject.id },
+          details: { ...operation.details, ...outcome.details },
+        });
+        return result;
+      });
     } catch (error) {
       if (error instanceof DomainError) {
         await this.record({
@@ -74,13 +85,17 @@ export class AuditTrail {
       }
       throw error;
     }
-    const outcome = describe(result);
-    await this.record({
-      ...operation,
-      outcome: 'SUCCESS',
-      subject: { type: operation.subject.type, id: outcome.subjectId ?? operation.subject.id },
-      details: { ...operation.details, ...outcome.details },
+  }
+
+  private build(input: AuditRecordInput): AuditEvent {
+    return Object.freeze({
+      id: this.ids.next(),
+      occurredAt: this.clock.now(),
+      actor: Object.freeze({ userId: input.actor.userId, role: input.actor.role }),
+      action: input.action,
+      outcome: input.outcome ?? 'SUCCESS',
+      subject: Object.freeze({ ...input.subject }),
+      details: Object.freeze({ ...(input.details ?? {}) }),
     });
-    return result;
   }
 }

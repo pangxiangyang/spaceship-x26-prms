@@ -103,8 +103,8 @@ const DAY_MS = 24 * HOUR_MS;
  * so the data obeys every business rule and appears in the audit trail.
  */
 export async function seedDemoData(container: AppContainer, clock: OffsetClock): Promise<void> {
-  const { domain, auth } = container;
-  const [lead] = await domain.repositories.users.findCrewLeads();
+  const { domain, auth, persistence } = container;
+  const [lead] = await persistence.repositories.users.findCrewLeads();
   if (!lead) throw new Error('Crew Leads must be registered before seeding.');
   const crew: Actor = { userId: lead.id, role: Role.CREW_LEAD };
 
