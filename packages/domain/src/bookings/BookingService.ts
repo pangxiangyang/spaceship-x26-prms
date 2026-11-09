@@ -82,7 +82,7 @@ export class BookingService {
         await tx.lockSchedule({ resourceId: resource.id });
         await tx.lockSchedule({ passengerId: passenger.id });
         await this.assertPassengerIsFree(tx, passenger.id, slot);
-        await this.assertBelowActiveBookingLimit(tx, passenger.id);
+        await this.assertBelowCurrentBookingLimit(tx, passenger.id);
         await this.assertCapacityAvailable(tx, resource, slot);
 
         const booking = Booking.create({
@@ -156,7 +156,7 @@ export class BookingService {
       this.assertUsable(resource, passenger);
     }
     const occupied = (await this.deps.bookings.findByResource(resourceId, window))
-      .filter((b) => b.occupiesCapacity)
+      .filter((b) => b.isActive)
       .map((b) => b.slot)
       .sort((a, b) => a.start.getTime() - b.start.getTime());
     return { resource, occupied };
@@ -197,19 +197,22 @@ export class BookingService {
     slot: TimeSlot,
   ): Promise<void> {
     const overlapping = await tx.bookings.findByPassenger(passengerId, slot);
-    if (overlapping.some((b) => b.occupiesCapacity)) {
+    if (overlapping.some((b) => b.isActive)) {
       throw new ConflictError('BOOKING_OVERLAP', 'You already have a booking during this time.');
     }
   }
 
-  /** Counts bookings that have not ended and are not cancelled: upcoming or in progress. */
-  private async assertBelowActiveBookingLimit(tx: Transaction, passengerId: string): Promise<void> {
-    const limit = this.deps.policy.maxActiveBookingsPerPassenger;
+  /** Counts current bookings: active (not cancelled) and not ended, i.e. upcoming or in progress. */
+  private async assertBelowCurrentBookingLimit(
+    tx: Transaction,
+    passengerId: string,
+  ): Promise<void> {
+    const limit = this.deps.policy.maxCurrentBookingsPerPassenger;
     const notEnded = await tx.bookings.findByPassenger(
       passengerId,
       TimeSlot.onwardsFrom(this.deps.clock.now()),
     );
-    if (notEnded.filter((b) => b.occupiesCapacity).length >= limit) {
+    if (notEnded.filter((b) => b.isActive).length >= limit) {
       throw new ConflictError(
         'BOOKING_LIMIT_EXCEEDED',
         `You can hold at most ${limit} bookings that have not ended yet. Cancel one to book another.`,
@@ -223,7 +226,7 @@ export class BookingService {
     slot: TimeSlot,
   ): Promise<void> {
     const existing = (await tx.bookings.findByResource(resource.id, slot))
-      .filter((b) => b.occupiesCapacity)
+      .filter((b) => b.isActive)
       .map((b) => b.slot);
     if (peakConcurrency(existing, slot) >= resource.capacity) {
       throw new ConflictError(

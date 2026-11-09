@@ -128,7 +128,7 @@ export interface Meta {
     maxDurationMinutes: number;
     maxAdvanceDays: number;
     checkInLeadMinutes: number;
-    maxActiveBookingsPerPassenger: number;
+    maxCurrentBookingsPerPassenger: number;
   };
   /** Present only on demo deployments. */
   demo: { accounts: { label: string; username: string; password: string }[] } | null;

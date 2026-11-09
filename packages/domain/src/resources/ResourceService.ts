@@ -111,7 +111,7 @@ export class ResourceService {
         const resource = await findOrThrow(tx.resources, resourceId);
         const now = this.deps.clock.now();
         const notEnded = await tx.bookings.findByResource(resourceId, TimeSlot.onwardsFrom(now));
-        const upcoming = notEnded.filter((b) => b.occupiesCapacity);
+        const upcoming = notEnded.filter((b) => b.isActive);
 
         if (changes.capacity !== undefined && changes.capacity < resource.capacity) {
           const peak = peakConcurrency(upcoming.map((b) => b.slot));

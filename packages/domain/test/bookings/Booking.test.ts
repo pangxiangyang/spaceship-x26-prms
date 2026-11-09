@@ -15,19 +15,19 @@ const newBooking = () =>
   });
 
 describe('Booking', () => {
-  it('starts confirmed and occupies capacity', () => {
+  it('starts confirmed and active', () => {
     const booking = newBooking();
     expect(booking.status).toBe('CONFIRMED');
-    expect(booking.occupiesCapacity).toBe(true);
+    expect(booking.isActive).toBe(true);
     expect(booking.lifecycle(t('09:00'))).toBe('UPCOMING');
   });
 
   describe('cancel', () => {
-    it('frees capacity and records the reason', () => {
+    it('stops being active and records the reason', () => {
       const booking = newBooking();
       booking.cancel(t('09:00'), 'PASSENGER_REQUEST');
       expect(booking.status).toBe('CANCELLED');
-      expect(booking.occupiesCapacity).toBe(false);
+      expect(booking.isActive).toBe(false);
       expect(booking.cancellationReason).toBe('PASSENGER_REQUEST');
       expect(booking.cancelledAt).toEqual(t('09:00'));
     });
@@ -104,7 +104,7 @@ describe('Booking snapshots (persistence)', () => {
     const cancelled = newBooking();
     cancelled.cancel(t('09:00'), 'TIER_DOWNGRADE');
     const restoredCancelled = Booking.restore(cancelled.toSnapshot());
-    expect(restoredCancelled.occupiesCapacity).toBe(false);
+    expect(restoredCancelled.isActive).toBe(false);
     expect(restoredCancelled.cancellationReason).toBe('TIER_DOWNGRADE');
     expect(() => restoredCancelled.cancel(t('09:30'), 'PASSENGER_REQUEST')).toThrow(ConflictError);
   });

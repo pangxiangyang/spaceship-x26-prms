@@ -140,8 +140,12 @@ export class Booking {
     return this._cancellationReason;
   }
 
-  /** Whether the booking holds a seat on the resource during its slot. */
-  get occupiesCapacity(): boolean {
+  /**
+   * Not cancelled: the booking takes a place on the resource during its slot, whenever
+   * that is. Like `Resource.isActive`, a status that ignores time; whether a booking is
+   * over is a separate question (see `lifecycle`).
+   */
+  get isActive(): boolean {
     return this._status !== BookingStatus.CANCELLED;
   }
 

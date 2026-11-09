@@ -274,7 +274,7 @@ export class ReportService {
   }
 
   private async bookingsIn(period: TimeSlot): Promise<Booking[]> {
-    return (await this.deps.bookings.findOverlapping(period)).filter((b) => b.occupiesCapacity);
+    return (await this.deps.bookings.findOverlapping(period)).filter((b) => b.isActive);
   }
 
   /**

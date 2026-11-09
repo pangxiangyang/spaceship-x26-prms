@@ -4,7 +4,8 @@ import { EmptyState, ErrorBanner, LifecycleBadge, Loading, PageHeader } from '..
 import { useAction, useApiData } from '../../hooks/useApiData';
 import { CATEGORY_ICONS, formatCode, formatMinutes, formatSlot } from '../../lib/format';
 
-const isActive = (b: Booking) => b.lifecycle === 'UPCOMING' || b.lifecycle === 'IN_PROGRESS';
+/** Not over yet: upcoming or in progress. */
+const isCurrent = (b: Booking) => b.lifecycle === 'UPCOMING' || b.lifecycle === 'IN_PROGRESS';
 
 /**
  * Whether check-in is open yet, using the server's check-in window. Until that is known,
@@ -31,8 +32,8 @@ export function BookingsPage() {
 
   const bookings = data?.bookings ?? [];
   // Soonest first for what is coming up; most recent first for the past.
-  const active = bookings.filter(isActive).reverse();
-  const past = bookings.filter((b) => !isActive(b));
+  const current = bookings.filter(isCurrent).reverse();
+  const past = bookings.filter((b) => !isCurrent(b));
 
   return (
     <>
@@ -45,11 +46,11 @@ export function BookingsPage() {
 
       <section>
         <h2 className="section-title">Upcoming &amp; in progress</h2>
-        {data && active.length === 0 && (
+        {data && current.length === 0 && (
           <EmptyState title="Nothing booked yet">Browse resources to make a booking.</EmptyState>
         )}
         <ul className="booking-list">
-          {active.map((booking) => (
+          {current.map((booking) => (
             <li key={booking.id} className="card booking-row">
               <span className="resource-icon small" aria-hidden>
                 {booking.category ? CATEGORY_ICONS[booking.category] : '•'}

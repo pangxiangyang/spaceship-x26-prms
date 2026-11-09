@@ -411,7 +411,7 @@ export function describePersistenceContract(
           pod.id,
           TimeSlot.of(slot.start, slot.end),
         );
-        expect(stored.filter((b) => b.occupiesCapacity)).toHaveLength(3);
+        expect(stored.filter((b) => b.isActive)).toHaveLength(3);
       });
     });
   });

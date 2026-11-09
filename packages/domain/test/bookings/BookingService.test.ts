@@ -180,7 +180,7 @@ describe('BookingService', () => {
       ).rejects.toThrow(expect.objectContaining({ code: 'BOOKING_OVERLAP' }));
     });
 
-    describe('active booking limit (3 per passenger by default)', () => {
+    describe('current booking limit (3 per passenger by default)', () => {
       /** A passenger with three one-hour bookings at different times, on different resources. */
       const passengerWithThreeBookings = async () => {
         const pod = await ctx.addResource({ capacity: 5 });
@@ -250,7 +250,7 @@ describe('BookingService', () => {
         pod.id,
         TimeSlot.of(at(60), at(120)),
       );
-      expect(stored.filter((b) => b.occupiesCapacity)).toHaveLength(3);
+      expect(stored.filter((b) => b.isActive)).toHaveLength(3);
     });
   });
 
