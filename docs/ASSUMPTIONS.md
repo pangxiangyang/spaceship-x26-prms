@@ -85,6 +85,9 @@ These values live in one place (`BookingPolicy`) and can be changed without touc
   removed account (for example after a demo reset) is rejected.
 - Behind Cloud Run, the client address comes from `X-Forwarded-For` (`TRUST_PROXY=1`), so the
   sign-in limit applies per visitor rather than to everyone at once.
+- Changes are also limited per signed-in account (60 a minute by default), whatever address
+  they come from. The demo publishes its sign-in details, so this bounds how much one visitor
+  or script can write, and cost, before the daily reset. Reads are not limited.
 
 ## Live demo
 

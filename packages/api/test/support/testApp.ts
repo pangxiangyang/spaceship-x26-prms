@@ -53,6 +53,7 @@ export function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     crewLeads: DEMO_CREW_LEADS,
     webDistDir: undefined,
     loginRateLimit: { windowMs: 60_000, max: 1000 },
+    writeRateLimit: { windowMs: 60_000, max: 1000 },
     storage: { kind: 'memory' },
     trustProxy: 0,
     ...overrides,

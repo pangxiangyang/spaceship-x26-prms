@@ -60,6 +60,24 @@ describe('platform concerns', () => {
     expect((await attempt('198.51.100.20')).status).toBe(401);
   });
 
+  it('limits how many changes each signed-in user can make per window', async () => {
+    const { api, auth, createPassenger } = await createTestApp({
+      writeRateLimit: { windowMs: 60_000, max: 3 },
+    });
+    const [a, b] = [await createPassenger('SILVER'), await createPassenger('SILVER')];
+    const write = (token: string) =>
+      api.post('/api/bookings/no-such-booking/cancel').set(auth(token));
+
+    for (let i = 0; i < 3; i += 1) expect((await write(a.token)).status).toBe(404);
+    const limited = await write(a.token);
+    expect(limited.status).toBe(429);
+    expect(limited.body.error.code).toBe('RATE_LIMITED');
+    // Counted per account, not per address: another passenger is unaffected,
+    expect((await write(b.token)).status).toBe(404);
+    // and reading is never limited.
+    expect((await api.get('/api/bookings').set(auth(a.token))).status).toBe(200);
+  });
+
   it('answers malformed JSON and unknown endpoints with JSON errors', async () => {
     const { api, crewToken } = await createTestApp();
     const bad = await api

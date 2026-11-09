@@ -32,6 +32,8 @@ export interface AppConfig {
   /** Directory containing the built web client, served at `/` when present. */
   webDistDir: string | undefined;
   loginRateLimit: { windowMs: number; max: number };
+  /** Changes (non-GET requests) per signed-in account. */
+  writeRateLimit: { windowMs: number; max: number };
   storage: StorageConfig;
   /** Reverse proxies in front of the app (Cloud Run: 1). 0 trusts none. */
   trustProxy: number;
@@ -70,6 +72,7 @@ const envSchema = z.object({
   PRMS_CREW_LEADS: z.string().optional(),
   WEB_DIST_DIR: z.string().optional(),
   LOGIN_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
+  WRITE_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(60),
   STORAGE: z.enum(['memory', 'firestore']).optional(),
   FIRESTORE_PROJECT_ID: z.string().min(1).optional(),
   FIRESTORE_DATABASE_ID: z.string().min(1).default('(default)'),
@@ -142,6 +145,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     crewLeads,
     webDistDir: e.WEB_DIST_DIR,
     loginRateLimit: { windowMs: 15 * 60 * 1000, max: e.LOGIN_RATE_LIMIT_MAX },
+    writeRateLimit: { windowMs: 60 * 1000, max: e.WRITE_RATE_LIMIT_MAX },
     storage,
     trustProxy: e.TRUST_PROXY,
   };

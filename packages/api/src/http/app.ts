@@ -7,6 +7,7 @@ import type { AppContainer } from '../bootstrap/container';
 import { errorHandler } from './errorHandler';
 import type { Logger } from './logger';
 import { authenticate, requireRole } from './middleware/authenticate';
+import { limitWrites } from './middleware/limitWrites';
 import { requestLogger } from './middleware/requestLogger';
 import { adminRoutes } from './routes/adminRoutes';
 import { authRoutes } from './routes/authRoutes';
@@ -29,8 +30,15 @@ export function createApp(container: AppContainer, logger: Logger): Express {
   app.use('/api/auth', authRoutes(container));
 
   const authenticated = authenticate(container.tokens, container.auth);
-  app.use('/api/admin', authenticated, requireRole(Role.CREW_LEAD), adminRoutes(container));
-  app.use('/api', authenticated, passengerRoutes(container));
+  const writeLimit = limitWrites(container.config.writeRateLimit);
+  app.use(
+    '/api/admin',
+    authenticated,
+    writeLimit,
+    requireRole(Role.CREW_LEAD),
+    adminRoutes(container),
+  );
+  app.use('/api', authenticated, writeLimit, passengerRoutes(container));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No such API endpoint.' } });
