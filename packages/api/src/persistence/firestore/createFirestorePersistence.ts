@@ -73,6 +73,8 @@ export function createFirestorePersistence(db: Firestore, namespace = ''): Persi
         }
       },
     },
+    // One document read, whether or not the marker exists.
+    ping: async () => void (await demoSeedDoc.get()),
     wipe: async () => {
       for (const name of COLLECTIONS) {
         await db.recursiveDelete(collections[name]);

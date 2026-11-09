@@ -95,7 +95,8 @@ step "Deploying service $SERVICE"
 g run deploy "$SERVICE" --image="$IMAGE" --region="$REGION" \
   --service-account="$RUNTIME_SA" --allow-unauthenticated \
   --set-env-vars="$ENV_VARS" --set-secrets="$SECRETS" \
-  --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --cpu-boost
+  --min-instances=0 --max-instances=1 --cpu=1 --memory=512Mi --cpu-boost \
+  --startup-probe=httpGet.path=/api/ready,periodSeconds=5,timeoutSeconds=3,failureThreshold=24
 
 step "Deploying job $RESET_JOB"
 g run jobs deploy "$RESET_JOB" --image="$IMAGE" --region="$REGION" \

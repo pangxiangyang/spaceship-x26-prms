@@ -26,6 +26,15 @@ export function createApp(container: AppContainer, logger: Logger): Express {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', time: container.domain.clock.now().toISOString() });
   });
+  // Readiness: storage answers. Cloud Run's startup probe uses it; /api/health stays free.
+  app.get('/api/ready', async (_req, res) => {
+    try {
+      await container.persistence.ping();
+      res.json({ status: 'ready' });
+    } catch {
+      res.status(503).json({ error: { code: 'NOT_READY', message: 'Storage is not reachable.' } });
+    }
+  });
   app.use('/api/meta', metaRoutes(container));
   app.use('/api/auth', authRoutes(container));
 

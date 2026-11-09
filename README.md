@@ -222,29 +222,30 @@ Design decisions, the patterns used and why, and the trade-offs are written up i
 All endpoints except health, meta and login require `Authorization: Bearer <token>`.
 Errors share one shape: `{ "error": { "code": "CAPACITY_EXCEEDED", "message": "…", "issues"?: [...] } }`.
 
-| Method & path                                | Who        | Purpose                                     |
-| -------------------------------------------- | ---------- | ------------------------------------------- |
-| `POST /api/auth/login`                       | anyone     | Sign in (rate-limited)                      |
-| `GET /api/meta`                              | anyone     | Tiers, categories, policy, demo accounts    |
-| `GET /api/me`                                | signed in  | Current user                                |
-| `GET /api/resources`                         | passenger  | Resources the tier grants                   |
-| `GET /api/resources/:id/occupancy?from&to`   | passenger  | Anonymised booked slots (≤ 7 days)          |
-| `GET /api/bookings`                          | passenger  | Own bookings                                |
-| `POST /api/bookings`                         | passenger  | Book `{resourceId, start, end}`             |
-| `POST /api/bookings/:id/check-in`            | passenger  | Start usage (re-validated)                  |
-| `POST /api/bookings/:id/cancel`              | owner/crew | Cancel a pending booking                    |
-| `GET /api/history`                           | passenger  | Personal history and trends                 |
-| `GET/POST /api/admin/passengers`             | crew       | List / create passenger accounts            |
-| `PATCH /api/admin/passengers/:id`            | crew       | Rename                                      |
-| `PUT /api/admin/passengers/:id/tier`         | crew       | Upgrade / downgrade                         |
-| `GET /api/admin/passengers/:id/history`      | crew       | A passenger's history                       |
-| `GET/POST /api/admin/resources`              | crew       | Inventory / provision                       |
-| `PATCH /api/admin/resources/:id`             | crew       | Edit (capacity, tier, …)                    |
-| `POST /api/admin/resources/:id/decommission` | crew       | Retire a resource                           |
-| `GET /api/admin/crew-leads`                  | crew       | The three Crew Leads                        |
-| `GET /api/admin/audit`                       | crew       | Filter by action/outcome/actor/subject/time |
-| `GET /api/admin/reports/tier-usage`          | crew       | Usage grouped by tier                       |
-| `GET /api/admin/reports/resource-demand`     | crew       | Average/peak use, turn-aways, demand level  |
+| Method & path                                | Who        | Purpose                                       |
+| -------------------------------------------- | ---------- | --------------------------------------------- |
+| `POST /api/auth/login`                       | anyone     | Sign in (rate-limited)                        |
+| `GET /api/meta`                              | anyone     | Tiers, categories, policy, demo accounts      |
+| `GET /api/health`, `GET /api/ready`          | anyone     | Liveness (free); readiness (one storage read) |
+| `GET /api/me`                                | signed in  | Current user                                  |
+| `GET /api/resources`                         | passenger  | Resources the tier grants                     |
+| `GET /api/resources/:id/occupancy?from&to`   | passenger  | Anonymised booked slots (≤ 7 days)            |
+| `GET /api/bookings`                          | passenger  | Own bookings                                  |
+| `POST /api/bookings`                         | passenger  | Book `{resourceId, start, end}`               |
+| `POST /api/bookings/:id/check-in`            | passenger  | Start usage (re-validated)                    |
+| `POST /api/bookings/:id/cancel`              | owner/crew | Cancel a pending booking                      |
+| `GET /api/history`                           | passenger  | Personal history and trends                   |
+| `GET/POST /api/admin/passengers`             | crew       | List / create passenger accounts              |
+| `PATCH /api/admin/passengers/:id`            | crew       | Rename                                        |
+| `PUT /api/admin/passengers/:id/tier`         | crew       | Upgrade / downgrade                           |
+| `GET /api/admin/passengers/:id/history`      | crew       | A passenger's history                         |
+| `GET/POST /api/admin/resources`              | crew       | Inventory / provision                         |
+| `PATCH /api/admin/resources/:id`             | crew       | Edit (capacity, tier, …)                      |
+| `POST /api/admin/resources/:id/decommission` | crew       | Retire a resource                             |
+| `GET /api/admin/crew-leads`                  | crew       | The three Crew Leads                          |
+| `GET /api/admin/audit`                       | crew       | Filter by action/outcome/actor/subject/time   |
+| `GET /api/admin/reports/tier-usage`          | crew       | Usage grouped by tier                         |
+| `GET /api/admin/reports/resource-demand`     | crew       | Average/peak use, turn-aways, demand level    |
 
 Status codes: `400` invalid input · `401` not signed in, or the account no longer exists ·
 `403` role or tier not allowed · `404` unknown · `409` conflicts with current state (full,

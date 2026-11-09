@@ -44,6 +44,7 @@ export function createMemoryPersistence(): Persistence {
         return true;
       },
     },
+    ping: async () => {},
     wipe: async () => {
       storage.clear();
       credentials.clear();

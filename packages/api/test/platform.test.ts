@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createContainer } from '../src/bootstrap/container';
 import { ConfigError, loadConfig } from '../src/config';
 import { createApp } from '../src/http/app';
@@ -14,6 +14,17 @@ describe('platform concerns', () => {
     expect(meta.body.tiers).toEqual(['SILVER', 'GOLD', 'PLATINUM']);
     expect(meta.body.bookingPolicy.maxDurationMinutes).toBe(240);
     expect(meta.body.demo).toBeNull();
+  });
+
+  it('reports ready only when storage answers', async () => {
+    const { api, container } = await createTestApp();
+    await api.get('/api/ready').expect(200, { status: 'ready' });
+
+    vi.spyOn(container.persistence, 'ping').mockRejectedValue(new Error('storage unreachable'));
+    const down = await api.get('/api/ready').expect(503);
+    expect(down.body.error.code).toBe('NOT_READY');
+    // Liveness stays free and independent of storage.
+    await api.get('/api/health').expect(200);
   });
 
   it('publishes the booking policy the domain enforces, not the defaults', async () => {

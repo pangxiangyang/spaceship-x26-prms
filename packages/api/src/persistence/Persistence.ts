@@ -21,6 +21,8 @@ export interface Persistence extends PrmsStorage {
   /** Password hashes as part of unit of work `tx`, to store them with a new account. */
   credentialsIn(tx: Transaction): CredentialStore;
   readonly demoSeed: DemoSeedMarker;
+  /** Resolves if storage answers (one cheap read); used by the readiness check. */
+  ping(): Promise<void>;
   /** Deletes all stored data. Only the demo reset calls this. */
   wipe(): Promise<void>;
   /** Releases connections. */
