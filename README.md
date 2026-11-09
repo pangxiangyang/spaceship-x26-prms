@@ -277,6 +277,9 @@ Some tests worth reading:
 
 ## Known limitations & next steps
 
+Product ideas (a deck map of the ship, an availability timeline when booking) and other
+follow-ups are described in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
 - **One instance.** Booking capacity is protected by an in-process lock, so the Cloud Run
   service runs at most one instance. Scaling out means moving that check into a Firestore
   transaction on the resource. [docs/DESIGN.md](docs/DESIGN.md#concurrency) describes how.
