@@ -221,6 +221,35 @@ describe('ReportService', () => {
       expect(row).toMatchObject({ utilization: 0.0625, peakUtilization: 1 });
     });
 
+    it('measures average use only over the time the resource was in service', async () => {
+      // Provisioned halfway through an 8-hour period, then fully booked until the end.
+      const period = TimeSlot.of(at(0), at(480));
+      ctx.clock.advanceMinutes(240);
+      const pod = await ctx.addResource({ capacity: 1 });
+      const { actor } = await ctx.addPassenger('SILVER');
+      await ctx.domain.bookings.book(actor, { resourceId: pod.id, start: at(240), end: at(480) });
+
+      const [row] = await ctx.domain.reports.resourceDemand(ctx.crewLead, period);
+      expect(row).toMatchObject({ utilization: 1 });
+    });
+
+    it('stops counting available time when a resource is decommissioned', async () => {
+      const period = TimeSlot.of(at(0), at(480));
+      const pod = await ctx.addResource({ capacity: 1 });
+      const { actor } = await ctx.addPassenger('SILVER');
+      const { booking } = await ctx.domain.bookings.book(actor, {
+        resourceId: pod.id,
+        start: at(0),
+        end: at(120),
+      });
+      await ctx.domain.bookings.checkIn(actor, booking.id);
+      ctx.clock.advanceMinutes(120);
+      await ctx.domain.resources.decommission(ctx.crewLead, pod.id);
+
+      const [row] = await ctx.domain.reports.resourceDemand(ctx.crewLead, period);
+      expect(row).toMatchObject({ utilization: 1 });
+    });
+
     it('explains a high or moderate level that comes from average use', async () => {
       const busy = await ctx.addResource({ name: 'Busy', capacity: 1 });
       const steady = await ctx.addResource({ name: 'Steady', capacity: 2 });

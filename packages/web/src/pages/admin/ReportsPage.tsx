@@ -140,11 +140,11 @@ export function ReportsPage() {
         <h2 className="section-title">Resource demand</h2>
         {demand.data && (
           <p className="muted small">
-            <strong>Average use</strong> is booked time divided by available time (capacity ×
-            period), so quiet nights pull it down. <strong>Peak use</strong> is how full the
-            resource got at its busiest moment. A resource is in high demand as soon as anyone is
-            turned away because it was full, or when average use reaches{' '}
-            {formatPercent(demand.data.thresholds.high)}; moderate from{' '}
+            <strong>Average use</strong> is booked time divided by available time (capacity × the
+            time in service during the period), so quiet nights pull it down.{' '}
+            <strong>Peak use</strong> is how full the resource got at its busiest moment. A resource
+            is in high demand as soon as anyone is turned away because it was full, or when average
+            use reaches {formatPercent(demand.data.thresholds.high)}; moderate from{' '}
             {formatPercent(demand.data.thresholds.moderate)}.
           </p>
         )}

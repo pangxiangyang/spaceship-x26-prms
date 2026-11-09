@@ -220,7 +220,8 @@ export class ReportService {
       .map((resource) => {
         const own = bookings.filter((b) => b.resourceId === resource.id);
         const minutesBooked = sum(own.map((b) => clippedMinutes(b, period)));
-        const utilization = minutesBooked / (resource.capacity * period.durationMinutes);
+        const availableMinutes = resource.capacity * inServiceMinutes(resource, period);
+        const utilization = availableMinutes > 0 ? minutesBooked / availableMinutes : 0;
         const peakUtilization =
           peakConcurrency(
             own.map((b) => b.slot),
@@ -288,6 +289,19 @@ function assertReportablePeriod(period: TimeSlot): void {
   if (period.durationMinutes * MINUTE_MS > MAX_REPORT_DAYS * DAY_MS) {
     throw new ValidationError(`Report periods can span at most ${MAX_REPORT_DAYS} days.`);
   }
+}
+
+/**
+ * How long the resource was in service during the period: from provisioning until it was
+ * decommissioned. Capacity changes are not stored, so today's capacity applies throughout.
+ */
+function inServiceMinutes(resource: Resource, period: TimeSlot): number {
+  const from = Math.max(period.start.getTime(), resource.createdAt.getTime());
+  const to = Math.min(
+    period.end.getTime(),
+    resource.decommissionedAt?.getTime() ?? Number.POSITIVE_INFINITY,
+  );
+  return Math.max(0, to - from) / MINUTE_MS;
 }
 
 function clippedMinutes(booking: Booking, period: TimeSlot): number {
