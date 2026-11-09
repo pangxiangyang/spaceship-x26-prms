@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { createTestApp } from './support/testApp';
+import { describe, expect, it, vi } from 'vitest';
+import { createContainer } from '../src/bootstrap/container';
+import { createTestApp, testConfig, testPersistence } from './support/testApp';
 
 describe('authentication', () => {
   it('issues a token and profile on valid credentials', async () => {
@@ -21,6 +22,20 @@ describe('authentication', () => {
     expect(wrong.status).toBe(401);
     expect(unknown.status).toBe(401);
     expect(wrong.body).toEqual(unknown.body);
+  });
+
+  it('reads the same stored data for an unknown user as for a wrong password', async () => {
+    const persistence = testPersistence();
+    const { auth } = await createContainer(testConfig(), { persistence });
+    const reads = vi.spyOn(persistence.credentials, 'getPasswordHash');
+
+    await expect(auth.login('commander', 'wrong-password')).rejects.toThrow();
+    const forKnownUser = reads.mock.calls.length;
+    reads.mockClear();
+    await expect(auth.login('ghost', 'wrong-password')).rejects.toThrow();
+
+    // Different storage round trips would let response times reveal which usernames exist.
+    expect(reads.mock.calls.length).toBe(forKnownUser);
   });
 
   it('validates the login payload', async () => {

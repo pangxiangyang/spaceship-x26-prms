@@ -15,6 +15,8 @@ import type { PasswordHasher } from './PasswordHasher';
 import type { TokenService } from './TokenService';
 
 export const PASSWORD_MIN_LENGTH = 8;
+/** Looked up for unknown usernames, so they cost the same storage reads as real ones. */
+const NO_SUCH_ACCOUNT_ID = 'no-such-account';
 export const PASSWORD_MAX_LENGTH = 128;
 
 export interface LoginResult {
@@ -39,8 +41,9 @@ export class AuthService {
 
   async login(username: string, password: string): Promise<LoginResult> {
     const user = await this.domain.repositories.users.findByUsername(username);
-    const hash = user ? await this.credentials.getPasswordHash(user.id) : undefined;
-    // Compare against a dummy hash for unknown users so timing does not reveal which usernames exist.
+    // Unknown usernames make the same reads and a comparison against a dummy hash, so
+    // response times do not reveal which usernames exist.
+    const hash = await this.credentials.getPasswordHash(user?.id ?? NO_SUCH_ACCOUNT_ID);
     const matches = await this.hasher.verify(password, hash ?? (await this.getDummyHash()));
     if (!user || !hash || !matches) {
       throw new AuthenticationError('Invalid username or password.');

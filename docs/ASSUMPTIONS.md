@@ -75,7 +75,8 @@ These values live in one place (`BookingPolicy`) and can be changed without touc
 - JWT (HS256) with an 8-hour default lifetime. The browser keeps the session in
   `sessionStorage`, which is cleared when the tab closes. That suits a shared ship terminal.
 - Login is rate-limited per IP and gives the same answer for unknown usernames and wrong
-  passwords, with comparable timing.
+  passwords. Both make the same storage reads and one bcrypt comparison, so response times
+  don't reveal which usernames exist.
 - Authorization is enforced **inside the domain services**. The route-level role gate and
   the client-side route guards are defence in depth and UX only.
 - Every authenticated request checks that the account still exists, so a valid token for a
