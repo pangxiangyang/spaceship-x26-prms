@@ -70,10 +70,6 @@ my direction. The decisions that were mine:
 - the questions raised in my review and the changes they led to (below)
 - what to leave out: the deck plan and the availability timeline went into the roadmap, not
   the build
-- in the mock review round: keeping the booking form's disabled _Confirm_ for full slots (and
-  documenting where turn-aways come from), two different passengers as the high-demand
-  threshold, and leaving its product questions (Crew Lead hand-over, fairness limits,
-  no-shows, emergencies) out of this submission
 - the repository, its history and the submission
 
 ## My review
@@ -125,6 +121,12 @@ For the user experience, I proposed two features:
 
 I judged both too much for this submission. They are written up in [ROADMAP.md](ROADMAP.md),
 with how each would fit the current design.
+
+### Extending it myself
+
+To check that I could change the code, not only read it, I started one rule myself: a limit
+of 3 bookings per passenger that have not ended yet (`maxCurrentBookingsPerPassenger` in
+`BookingPolicy`, checked in `BookingService.book`).
 
 ### Testing the application by hand
 
