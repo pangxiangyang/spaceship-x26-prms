@@ -132,6 +132,13 @@ describe('platform concerns', () => {
     );
     expect(o2).toMatchObject({ demandLevel: 'HIGH', demandReason: 'TURNED_AWAY' });
     expect(o2.turnedAwayPassengers).toBeGreaterThanOrEqual(2);
+    // Resources exist before the week of bookings replayed for them, so average use is a
+    // real share of the week: the O2 pod is full every afternoon but empty at night.
+    expect(o2.utilization).toBeGreaterThan(0.03);
+    expect(o2.utilization).toBeLessThan(0.2);
+    for (const resource of demand.body.resources) {
+      expect(resource.utilization).toBeLessThanOrEqual(1);
+    }
     await api
       .post('/api/auth/login')
       .send({ username: 'pia.platinum', password: 'passenger123' })

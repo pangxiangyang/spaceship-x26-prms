@@ -108,19 +108,26 @@ export async function seedDemoData(container: AppContainer, clock: OffsetClock):
   if (!lead) throw new Error('Crew Leads must be registered before seeding.');
   const crew: Actor = { userId: lead.id, role: Role.CREW_LEAD };
 
-  const resources = new Map<string, Resource>();
-  for (const spec of RESOURCES) {
-    resources.set(spec.name, await domain.resources.provision(crew, spec));
-  }
-  const passengers = new Map<string, Passenger>();
-  for (const p of PASSENGERS) {
-    passengers.set(
-      p.username,
-      await auth.createPassengerAccount(crew, { ...p, password: DEMO_PASSENGER_PASSWORD }),
-    );
-  }
-
   const today = startOfUtcHour(clock.now());
+  // The ship's resources and passengers exist from the start of the replayed week, before
+  // any of its bookings, so reports measure average use over the whole week.
+  const weekStart = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 7),
+  );
+  const resources = new Map<string, Resource>();
+  const passengers = new Map<string, Passenger>();
+  await clock.travelTo(weekStart, async () => {
+    for (const spec of RESOURCES) {
+      resources.set(spec.name, await domain.resources.provision(crew, spec));
+    }
+    for (const p of PASSENGERS) {
+      passengers.set(
+        p.username,
+        await auth.createPassengerAccount(crew, { ...p, password: DEMO_PASSENGER_PASSWORD }),
+      );
+    }
+  });
+
   const actorFor = (username: string): Actor => ({
     userId: passengers.get(username)!.id,
     role: Role.PASSENGER,
