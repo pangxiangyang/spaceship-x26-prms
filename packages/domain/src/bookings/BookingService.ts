@@ -82,6 +82,7 @@ export class BookingService {
         await tx.lockSchedule({ resourceId: resource.id });
         await tx.lockSchedule({ passengerId: passenger.id });
         await this.assertPassengerIsFree(tx, passenger.id, slot);
+        await this.assertBelowActiveBookingLimit(tx, passenger.id);
         await this.assertCapacityAvailable(tx, resource, slot);
 
         const booking = Booking.create({
@@ -198,6 +199,21 @@ export class BookingService {
     const overlapping = await tx.bookings.findByPassenger(passengerId, slot);
     if (overlapping.some((b) => b.occupiesCapacity)) {
       throw new ConflictError('BOOKING_OVERLAP', 'You already have a booking during this time.');
+    }
+  }
+
+  /** Counts bookings that have not ended and are not cancelled: upcoming or in progress. */
+  private async assertBelowActiveBookingLimit(tx: Transaction, passengerId: string): Promise<void> {
+    const limit = this.deps.policy.maxActiveBookingsPerPassenger;
+    const notEnded = await tx.bookings.findByPassenger(
+      passengerId,
+      TimeSlot.onwardsFrom(this.deps.clock.now()),
+    );
+    if (notEnded.filter((b) => b.occupiesCapacity).length >= limit) {
+      throw new ConflictError(
+        'BOOKING_LIMIT_EXCEEDED',
+        `You can hold at most ${limit} bookings that have not ended yet. Cancel one to book another.`,
+      );
     }
   }
 

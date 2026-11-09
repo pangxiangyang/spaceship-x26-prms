@@ -38,17 +38,18 @@ reviewers can see what was decided on purpose and what is out of scope.
 The brief says passengers "initiate the use of accessible resources with real-time
 validation". This is modelled as **booking a time slot** followed by **checking in**:
 
-| Rule                | Value                                                                                                                                         |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Slot duration       | 15 min – 4 h                                                                                                                                  |
-| Booking horizon     | Start between now (1-minute grace) and 14 days ahead                                                                                          |
-| Capacity check      | Peak simultaneous bookings during the requested slot must be below capacity. Back-to-back slots (`09:00–10:00`, `10:00–11:00`) don't overlap. |
-| Personal overlap    | A passenger cannot hold two overlapping bookings, even on different resources.                                                                |
-| Check-in window     | From 15 minutes before the start until the end of the slot                                                                                    |
-| Check-in validation | Tier and resource status are **re-checked** at check-in, so a booking made before a downgrade can't be used after it.                         |
-| Cancellation        | Only while `CONFIRMED` and before the slot ends. Passengers can cancel their own bookings and Crew Leads can cancel any.                      |
-| "Usage" for reports | A checked-in booking counts as its full booked duration. There is no explicit check-out.                                                      |
-| Missed bookings     | A confirmed booking whose slot ends without a check-in shows as `MISSED`. It is still counted as _booked_ time, because it blocked capacity.  |
+| Rule                 | Value                                                                                                                                                                                                                                                       |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Slot duration        | 15 min – 4 h                                                                                                                                                                                                                                                |
+| Booking horizon      | Start between now (1-minute grace) and 14 days ahead                                                                                                                                                                                                        |
+| Capacity check       | Peak simultaneous bookings during the requested slot must be below capacity. Back-to-back slots (`09:00–10:00`, `10:00–11:00`) don't overlap.                                                                                                               |
+| Personal overlap     | A passenger cannot hold two overlapping bookings, even on different resources.                                                                                                                                                                              |
+| Active booking limit | At most 3 bookings per passenger that have not ended yet (upcoming or in progress), across all resources. Cancelled and finished bookings don't count. Refused with `409 BOOKING_LIMIT_EXCEEDED`. Stops one passenger reserving a scarce resource for days. |
+| Check-in window      | From 15 minutes before the start until the end of the slot                                                                                                                                                                                                  |
+| Check-in validation  | Tier and resource status are **re-checked** at check-in, so a booking made before a downgrade can't be used after it.                                                                                                                                       |
+| Cancellation         | Only while `CONFIRMED` and before the slot ends. Passengers can cancel their own bookings and Crew Leads can cancel any.                                                                                                                                    |
+| "Usage" for reports  | A checked-in booking counts as its full booked duration. There is no explicit check-out.                                                                                                                                                                    |
+| Missed bookings      | A confirmed booking whose slot ends without a check-in shows as `MISSED`. It is still counted as _booked_ time, because it blocked capacity.                                                                                                                |
 
 These values live in one place (`BookingPolicy`) and can be changed without touching the rules.
 

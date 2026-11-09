@@ -157,7 +157,8 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 
 - **Permission validation.** Every booking is checked in real time: role, tier
   entitlement, resource status, slot policy (15 min – 4 h, not in the past, ≤ 14 days ahead),
-  the passenger's own overlapping bookings, and capacity. Capacity is measured as
+  the passenger's own overlapping bookings, a limit of 3 bookings per passenger that have
+  not ended yet, and capacity. Capacity is measured as
   **peak simultaneous use**, not as a raw count of overlapping bookings. **Check-in re-validates
   entitlement** at the moment of use.
 - **Tier management.** Crew Leads upgrade and downgrade passengers. A downgrade
@@ -253,7 +254,7 @@ Errors share one shape: `{ "error": { "code": "CAPACITY_EXCEEDED", "message": "�
 
 Status codes: `400` invalid input · `401` not signed in, or the account no longer exists ·
 `403` role or tier not allowed · `404` unknown · `409` conflicts with current state (full,
-overlapping, wrong state, duplicate username) · `429` too many sign-in attempts.
+overlapping, booking limit, wrong state, duplicate username) · `429` too many sign-in attempts.
 
 ---
 

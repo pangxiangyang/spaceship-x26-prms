@@ -34,6 +34,7 @@ const meta = (checkInLeadMinutes: number): Meta => ({
     maxDurationMinutes: 240,
     maxAdvanceDays: 14,
     checkInLeadMinutes,
+    maxActiveBookingsPerPassenger: 3,
   },
   demo: null,
 });

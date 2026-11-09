@@ -180,6 +180,61 @@ describe('BookingService', () => {
       ).rejects.toThrow(expect.objectContaining({ code: 'BOOKING_OVERLAP' }));
     });
 
+    describe('active booking limit (3 per passenger by default)', () => {
+      /** A passenger with three one-hour bookings at different times, on different resources. */
+      const passengerWithThreeBookings = async () => {
+        const pod = await ctx.addResource({ capacity: 5 });
+        const station = await ctx.addResource({
+          name: 'Food Station',
+          category: 'FOOD_STATION',
+          capacity: 2,
+        });
+        const cabin = await ctx.addResource({
+          name: 'Cabin',
+          category: 'CABIN',
+          minTier: 'GOLD',
+          capacity: 2,
+        });
+        const gym = await ctx.addResource({ name: 'Fitness Center', category: 'FITNESS' });
+        const { actor } = await ctx.addPassenger('GOLD');
+        const book = (resourceId: string, start: number) =>
+          ctx.domain.bookings.book(actor, { resourceId, start: at(start), end: at(start + 60) });
+        const held = [];
+        for (const [resource, start] of [
+          [pod, 0],
+          [station, 120],
+          [cabin, 240],
+        ] as const) {
+          held.push((await book(resource.id, start)).booking);
+        }
+        return { actor, gym, held, book };
+      };
+
+      it('refuses a fourth booking, even for a free slot on a free resource', async () => {
+        const { gym, book } = await passengerWithThreeBookings();
+
+        await expect(book(gym.id, 360)).rejects.toThrow(
+          expect.objectContaining({ code: 'BOOKING_LIMIT_EXCEEDED' }),
+        );
+        const denied = await ctx.domain.audit.list(ctx.crewLead, { outcome: 'DENIED' });
+        expect(denied.items[0]?.details).toMatchObject({ reason: 'BOOKING_LIMIT_EXCEEDED' });
+      });
+
+      it('frees a place when a booking is cancelled', async () => {
+        const { actor, gym, held, book } = await passengerWithThreeBookings();
+        await ctx.domain.bookings.cancel(actor, held[1]!.id);
+
+        await expect(book(gym.id, 360)).resolves.toBeDefined();
+      });
+
+      it('frees a place when a booking has ended', async () => {
+        const { gym, book } = await passengerWithThreeBookings();
+        ctx.clock.advanceMinutes(60); // the first booking (0–60) is over
+
+        await expect(book(gym.id, 360)).resolves.toBeDefined();
+      });
+    });
+
     it('never overbooks under concurrent requests', async () => {
       const pod = await ctx.addResource({ capacity: 3 });
       const passengers = await Promise.all(

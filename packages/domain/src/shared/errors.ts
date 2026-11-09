@@ -13,6 +13,7 @@ export type DomainErrorCode =
   | 'USERNAME_TAKEN'
   | 'CAPACITY_EXCEEDED'
   | 'BOOKING_OVERLAP'
+  | 'BOOKING_LIMIT_EXCEEDED'
   | 'RESOURCE_UNAVAILABLE'
   | 'INVALID_STATE';
 
@@ -61,6 +62,7 @@ export type ConflictCode = Extract<
   | 'BOOKING_OVERLAP'
   | 'RESOURCE_UNAVAILABLE'
   | 'INVALID_STATE'
+  | 'BOOKING_LIMIT_EXCEEDED'
 >;
 
 /** The request is well-formed but conflicts with the current system state. */
