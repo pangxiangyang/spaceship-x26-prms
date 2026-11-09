@@ -112,6 +112,22 @@ describe('App', () => {
     expect(screen.queryByRole('link', { name: 'Audit log' })).not.toBeInTheDocument();
   });
 
+  it('shows the tier the server holds now, not the one from sign-in', async () => {
+    const routes: Record<string, unknown> = {
+      '/api/resources': { resources: [cabin] },
+      '/api/me': { user: { ...passenger, tier: 'PLATINUM' } },
+    };
+    renderApp('/resources', passenger, routes);
+    const menu = (await screen.findByText('Gwen Alvarez')).closest('.user-menu') as HTMLElement;
+    expect(await within(menu).findByText('Platinum')).toBeInTheDocument();
+    expect(JSON.parse(sessionStorage.getItem('prms.session')!).user.tier).toBe('PLATINUM');
+
+    // A Crew Lead downgrades the passenger while the tab is in the background.
+    routes['/api/me'] = { user: { ...passenger, tier: 'SILVER' } };
+    window.dispatchEvent(new Event('focus'));
+    expect(await within(menu).findByText('Silver')).toBeInTheDocument();
+  });
+
   it('keeps passengers out of admin pages', async () => {
     renderApp('/admin/passengers', passenger, { '/api/resources': { resources: [] } });
     expect(await screen.findByRole('heading', { name: 'Ship resources' })).toBeInTheDocument();

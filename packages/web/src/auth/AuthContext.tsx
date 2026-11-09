@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -78,6 +79,33 @@ export function AuthProvider({ children, client }: { children: ReactNode; client
     },
     [api],
   );
+
+  // The stored user is a copy from sign-in. A Crew Lead may change the tier at any time, so
+  // ask the server again when the app starts and whenever the tab regains focus.
+  const refreshUser = useCallback(async () => {
+    const current = sessionRef.current;
+    if (!current) return;
+    try {
+      const { user } = await api.get<{ user: User }>('/api/me');
+      // Ignore the answer if the passenger signed out or in again meanwhile.
+      if (sessionRef.current?.token !== current.token) return;
+      const next = { token: current.token, user };
+      storeSession(next);
+      sessionRef.current = next;
+      setSession(next);
+    } catch {
+      // Keep the session as it is; a 401 already signs the user out via onUnauthorized.
+    }
+  }, [api]);
+
+  const signedIn = session !== null;
+  useEffect(() => {
+    if (!signedIn) return;
+    void refreshUser();
+    const onFocus = () => void refreshUser();
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [signedIn, refreshUser]);
 
   const value = useMemo(
     () => ({ user: session?.user ?? null, api, login, logout }),
