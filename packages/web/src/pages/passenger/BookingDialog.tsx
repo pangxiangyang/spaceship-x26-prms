@@ -10,18 +10,9 @@ import {
   peakOverlap,
   toDateInputValue,
 } from '../../lib/format';
+import { defaultBookingStart, startTimesFor } from '../../lib/bookingTimes';
 
 const DURATIONS = [15, 30, 45, 60, 90, 120, 180, 240];
-const TIMES = Array.from({ length: 96 }, (_, i) => {
-  const h = String(Math.floor(i / 4)).padStart(2, '0');
-  const m = String((i % 4) * 15).padStart(2, '0');
-  return `${h}:${m}`;
-});
-
-function nextQuarterHour(now = new Date()): string {
-  const minutes = Math.ceil((now.getHours() * 60 + now.getMinutes() + 1) / 15) * 15;
-  return TIMES[Math.min(minutes / 15, TIMES.length - 1)]!;
-}
 
 interface Props {
   resource: Resource;
@@ -31,9 +22,15 @@ interface Props {
 
 export function BookingDialog({ resource, onClose, onBooked }: Props) {
   const { api } = useAuth();
-  const [date, setDate] = useState(() => toDateInputValue(new Date()));
-  const [time, setTime] = useState(() => nextQuarterHour());
+  const [initial] = useState(() => defaultBookingStart(new Date()));
+  const [date, setDate] = useState(initial.date);
+  const [chosenTime, setTime] = useState(initial.time);
   const [duration, setDuration] = useState(60);
+
+  // On today's date only times still ahead are offered; keep the choice within them.
+  const times = startTimesFor(date, new Date());
+  const time = times.includes(chosenTime) ? chosenTime : (times[0] ?? chosenTime);
+  const noTimesLeft = times.length === 0;
 
   const dayStart = combineLocal(date, '00:00');
   const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
@@ -82,7 +79,7 @@ export function BookingDialog({ resource, onClose, onBooked }: Props) {
           <label>
             Start
             <select value={time} onChange={(e) => setTime(e.target.value)}>
-              {TIMES.map((t) => (
+              {times.map((t) => (
                 <option key={t}>{t}</option>
               ))}
             </select>
@@ -99,8 +96,10 @@ export function BookingDialog({ resource, onClose, onBooked }: Props) {
           </label>
         </div>
 
-        <div className={`availability ${full ? 'is-full' : ''}`} aria-live="polite">
-          {occupancy.loading ? (
+        <div className={`availability ${full || noTimesLeft ? 'is-full' : ''}`} aria-live="polite">
+          {noTimesLeft ? (
+            <>No start times are left today. Pick another date.</>
+          ) : occupancy.loading ? (
             'Checking availability…'
           ) : full ? (
             <>Fully booked for part of this time. Try another slot.</>
@@ -133,7 +132,11 @@ export function BookingDialog({ resource, onClose, onBooked }: Props) {
           <button type="button" className="button ghost" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="button primary" disabled={book.pending || full}>
+          <button
+            type="submit"
+            className="button primary"
+            disabled={book.pending || full || noTimesLeft}
+          >
             {book.pending ? 'Booking…' : 'Confirm booking'}
           </button>
         </div>

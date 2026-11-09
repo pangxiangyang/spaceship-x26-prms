@@ -1,11 +1,11 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiClient } from '../src/api/client';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { Resource, User } from '../src/api/types';
 import { App } from '../src/App';
 import { AuthProvider } from '../src/auth/AuthContext';
+import { fakeApi } from './support/fakeApi';
 
 const passenger: User = {
   id: 'p1',
@@ -35,31 +35,6 @@ const cabin: Resource = {
   createdAt: '2026-03-01T00:00:00Z',
   decommissionedAt: null,
 };
-
-function fakeApi(routes: Record<string, unknown>) {
-  const fetchImpl = vi.fn(async (url: string) => {
-    const path = url.split('?')[0]!;
-    if (path === '/api/auth/login') {
-      return new Response(
-        JSON.stringify({
-          error: { code: 'UNAUTHENTICATED', message: 'Invalid username or password.' },
-        }),
-        { status: 401 },
-      );
-    }
-    const body = routes[path];
-    return body === undefined
-      ? new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'nope' } }), {
-          status: 404,
-        })
-      : new Response(JSON.stringify(body), { status: 200 });
-  });
-  return new ApiClient({
-    getToken: () => 'token',
-    onUnauthorized: vi.fn(),
-    fetchImpl: fetchImpl as unknown as typeof fetch,
-  });
-}
 
 function renderApp(path: string, user: User | null, routes: Record<string, unknown> = {}) {
   sessionStorage.clear();
