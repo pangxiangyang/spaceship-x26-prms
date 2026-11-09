@@ -23,6 +23,7 @@ reviewers can see what was decided on purpose and what is out of scope.
 | …and to a session **in progress**?                                                            | It is allowed to finish. Interrupting someone mid-use of a life-support resource is never the safe default.                                                                                           |
 | Raising a resource's minimum tier                                                             | Same treatment as a downgrade (reason `RESOURCE_TIER_RAISED`).                                                                                                                                        |
 | Upgrades                                                                                      | Take effect immediately. There are no side effects on bookings.                                                                                                                                       |
+| Changing to the tier already held                                                             | Refused with `409 INVALID_STATE` (the request is well-formed but does not apply), and audited as denied. Nothing changes.                                                                             |
 
 ## Resources
 

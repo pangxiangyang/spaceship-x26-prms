@@ -1,6 +1,6 @@
 import { Role } from '../identity/Actor';
 import { isMembershipTier, tierIncludes, type MembershipTier } from '../membership/MembershipTier';
-import { ValidationError } from '../shared/errors';
+import { ConflictError, ValidationError } from '../shared/errors';
 import { requireNonBlank } from '../shared/validation';
 
 const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/;
@@ -119,7 +119,7 @@ export class Passenger extends User {
   changeTier(next: MembershipTier): TierChange {
     const to = Passenger.requireTier(next);
     if (to === this._tier) {
-      throw new ValidationError(`Passenger is already at the ${to} tier.`);
+      throw new ConflictError('INVALID_STATE', `Passenger is already at the ${to} tier.`);
     }
     const from = this._tier;
     this._tier = to;

@@ -70,9 +70,13 @@ describe('Passenger', () => {
       expect(p.changeTier('SILVER').direction).toBe('DOWNGRADE');
     });
 
-    it('rejects a change to the current tier', () => {
+    it('refuses a change to the current tier as a conflict with its state', () => {
+      // The request is well-formed; it just does not apply to this passenger right now.
       const p = Passenger.create({ ...base, username: 'ada', displayName: 'Ada', tier: 'GOLD' });
-      expect(() => p.changeTier('GOLD')).toThrow(ValidationError);
+      expect(() => p.changeTier('GOLD')).toThrow(
+        expect.objectContaining({ code: 'INVALID_STATE' }),
+      );
+      expect(() => p.changeTier('BRONZE' as never)).toThrow(ValidationError);
     });
   });
 });
