@@ -37,6 +37,8 @@ export interface PrmsDomain {
   reports: ReportService;
   repositories: PrmsRepositories;
   clock: Clock;
+  /** The booking rules in force (defaults plus any overrides). */
+  bookingPolicy: Readonly<BookingPolicy>;
 }
 
 /** Composition root for the domain: wires services to their collaborators. */
@@ -44,7 +46,10 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
   const { repositories } = options;
   const clock = options.clock ?? systemClock;
   const ids = options.ids ?? uuidGenerator;
-  const policy: BookingPolicy = { ...DEFAULT_BOOKING_POLICY, ...options.bookingPolicy };
+  const policy: Readonly<BookingPolicy> = Object.freeze({
+    ...DEFAULT_BOOKING_POLICY,
+    ...options.bookingPolicy,
+  });
 
   // One lock guards every operation that reads and then changes booking state.
   const bookingLock = new AsyncMutex();
@@ -61,5 +66,6 @@ export function createPrmsDomain(options: PrmsDomainOptions): PrmsDomain {
     reports: new ReportService({ ...repositories, clock }),
     repositories,
     clock,
+    bookingPolicy: policy,
   };
 }

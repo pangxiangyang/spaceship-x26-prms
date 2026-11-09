@@ -1,4 +1,10 @@
-import { createPrmsDomain, type Clock, type IdGenerator, type PrmsDomain } from '@prms/domain';
+import {
+  createPrmsDomain,
+  type BookingPolicy,
+  type Clock,
+  type IdGenerator,
+  type PrmsDomain,
+} from '@prms/domain';
 import { AuthService } from '../auth/AuthService';
 import { BcryptPasswordHasher, type PasswordHasher } from '../auth/PasswordHasher';
 import { JwtTokenService, type TokenService } from '../auth/TokenService';
@@ -20,6 +26,8 @@ export interface ContainerOverrides {
   clock?: Clock;
   ids?: IdGenerator;
   hasher?: PasswordHasher;
+  /** Overrides individual booking rules (the defaults apply otherwise). */
+  bookingPolicy?: Partial<BookingPolicy>;
   /** Defaults to the storage named in the configuration. */
   persistence?: Persistence;
 }
@@ -39,6 +47,7 @@ export async function createContainer(
     repositories: persistence.repositories,
     clock,
     ...(overrides.ids ? { ids: overrides.ids } : {}),
+    ...(overrides.bookingPolicy ? { bookingPolicy: overrides.bookingPolicy } : {}),
   });
   const tokens = new JwtTokenService(config.jwtSecret, config.tokenTtlSeconds);
   const hasher = overrides.hasher ?? new BcryptPasswordHasher(config.bcryptCost);

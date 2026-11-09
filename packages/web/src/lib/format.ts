@@ -107,4 +107,3 @@ export function peakOverlap(
 
 export const TIERS: Tier[] = ['SILVER', 'GOLD', 'PLATINUM'];
 export const CATEGORIES = Object.keys(CATEGORY_LABELS) as Category[];
-export const CHECK_IN_LEAD_MINUTES = 15;

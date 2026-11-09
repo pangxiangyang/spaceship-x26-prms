@@ -1,7 +1,10 @@
+import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createContainer } from '../src/bootstrap/container';
 import { ConfigError, loadConfig } from '../src/config';
-import { createTestApp, testConfig } from './support/testApp';
+import { createApp } from '../src/http/app';
+import { silentLogger } from '../src/http/logger';
+import { createTestApp, testConfig, testPersistence } from './support/testApp';
 
 describe('platform concerns', () => {
   it('reports health and reference data without authentication', async () => {
@@ -11,6 +14,15 @@ describe('platform concerns', () => {
     expect(meta.body.tiers).toEqual(['SILVER', 'GOLD', 'PLATINUM']);
     expect(meta.body.bookingPolicy.maxDurationMinutes).toBe(240);
     expect(meta.body.demo).toBeNull();
+  });
+
+  it('publishes the booking policy the domain enforces, not the defaults', async () => {
+    const container = await createContainer(testConfig(), {
+      persistence: testPersistence(),
+      bookingPolicy: { checkInLeadMinutes: 30 },
+    });
+    const meta = await request(createApp(container, silentLogger)).get('/api/meta').expect(200);
+    expect(meta.body.bookingPolicy.checkInLeadMinutes).toBe(30);
   });
 
   it('publishes demo sign-in details only when running with demo data', async () => {

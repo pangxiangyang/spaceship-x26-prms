@@ -25,7 +25,7 @@ export function createApp(container: AppContainer, logger: Logger): Express {
   app.get('/api/health', (_req, res) => {
     res.json({ status: 'ok', time: container.domain.clock.now().toISOString() });
   });
-  app.use('/api/meta', metaRoutes(container.config));
+  app.use('/api/meta', metaRoutes(container));
   app.use('/api/auth', authRoutes(container));
 
   const authenticated = authenticate(container.tokens, container.auth);

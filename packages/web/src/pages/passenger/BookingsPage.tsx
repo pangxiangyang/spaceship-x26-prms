@@ -1,20 +1,19 @@
-import type { Booking } from '../../api/types';
+import type { Booking, Meta } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { EmptyState, ErrorBanner, LifecycleBadge, Loading, PageHeader } from '../../components/ui';
 import { useAction, useApiData } from '../../hooks/useApiData';
-import {
-  CATEGORY_ICONS,
-  CHECK_IN_LEAD_MINUTES,
-  formatCode,
-  formatMinutes,
-  formatSlot,
-} from '../../lib/format';
+import { CATEGORY_ICONS, formatCode, formatMinutes, formatSlot } from '../../lib/format';
 
 const isActive = (b: Booking) => b.lifecycle === 'UPCOMING' || b.lifecycle === 'IN_PROGRESS';
 
-function canCheckIn(booking: Booking, now = Date.now()): boolean {
-  const opensAt = new Date(booking.start).getTime() - CHECK_IN_LEAD_MINUTES * 60_000;
-  return booking.lifecycle === 'UPCOMING' && now >= opensAt;
+/**
+ * Whether check-in is open yet, using the server's check-in window. Until that is known,
+ * the button stays available and the server decides.
+ */
+function canCheckIn(booking: Booking, leadMinutes: number | undefined, now = Date.now()): boolean {
+  if (booking.lifecycle !== 'UPCOMING') return false;
+  if (leadMinutes === undefined) return true;
+  return now >= new Date(booking.start).getTime() - leadMinutes * 60_000;
 }
 
 export function BookingsPage() {
@@ -23,6 +22,8 @@ export function BookingsPage() {
     (client) => client.get<{ bookings: Booking[] }>('/api/bookings'),
     [],
   );
+  const meta = useApiData((client) => client.get<Meta>('/api/meta'), []);
+  const leadMinutes = meta.data?.bookingPolicy.checkInLeadMinutes;
   const action = useAction(async (bookingId: string, kind: 'check-in' | 'cancel') => {
     await api.post(`/api/bookings/${bookingId}/${kind}`);
     reload();
@@ -67,11 +68,11 @@ export function BookingsPage() {
                     <button
                       type="button"
                       className="button primary"
-                      disabled={action.pending || !canCheckIn(booking)}
+                      disabled={action.pending || !canCheckIn(booking, leadMinutes)}
                       title={
-                        canCheckIn(booking)
+                        canCheckIn(booking, leadMinutes)
                           ? undefined
-                          : `Check-in opens ${CHECK_IN_LEAD_MINUTES} minutes before the start`
+                          : `Check-in opens ${leadMinutes} minutes before the start`
                       }
                       onClick={() => void action.run(booking.id, 'check-in')}
                     >

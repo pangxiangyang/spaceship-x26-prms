@@ -84,8 +84,8 @@ confirmed a deliberate decision or became a documented follow-up:
   isn't supported yet (start-up refuses a fourth), so an audited hand-over is in
   [ROADMAP.md](ROADMAP.md).
 - **Is the check-in rule hard-coded?** It is a default in `BookingPolicy`, defined once: from
-  15 minutes before the start until the end of the slot. The web app repeats the 15 minutes
-  instead of reading it from the API, and that duplication is listed in the roadmap.
+  15 minutes before the start until the end of the slot. The web app repeated the 15 minutes
+  instead of reading it from the API; it now reads the window from `GET /api/meta`.
 - **Is the high-usage threshold hard-coded?** It is also a default defined once (75% high,
   40% moderate). The roadmap proposes reading it from configuration or a Crew Lead settings
   page, with every change audited.
