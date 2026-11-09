@@ -142,7 +142,7 @@ describe('platform concerns', () => {
         env: 'production',
         seedDemoData: false,
         trustProxy: 1,
-        storage: { kind: 'firestore', databaseId: '(default)', collectionPrefix: '' },
+        storage: { kind: 'firestore', databaseId: '(default)', namespace: '' },
       });
       expect(() =>
         loadConfig({ NODE_ENV: 'production', JWT_SECRET: 'x'.repeat(40), PRMS_CREW_LEADS: crew }),
@@ -157,17 +157,17 @@ describe('platform concerns', () => {
           STORAGE: 'firestore',
           FIRESTORE_PROJECT_ID: 'spaceship-x26-prms',
           FIRESTORE_DATABASE_ID: 'prms',
-          FIRESTORE_COLLECTION_PREFIX: 'staging_',
+          FIRESTORE_NAMESPACE: 'staging',
         }).storage,
       ).toEqual({
         kind: 'firestore',
         projectId: 'spaceship-x26-prms',
         databaseId: 'prms',
-        collectionPrefix: 'staging_',
+        namespace: 'staging',
       });
       expect(() => loadConfig({ STORAGE: 'mongo' })).toThrow(ConfigError);
       expect(() =>
-        loadConfig({ STORAGE: 'firestore', FIRESTORE_COLLECTION_PREFIX: 'bad/prefix' }),
+        loadConfig({ STORAGE: 'firestore', FIRESTORE_NAMESPACE: 'bad/namespace' }),
       ).toThrow(ConfigError);
     });
 

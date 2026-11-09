@@ -76,11 +76,11 @@ To run locally against a real Firestore database:
 
 ```bash
 gcloud auth application-default login
-STORAGE=firestore FIRESTORE_PROJECT_ID=<project> FIRESTORE_COLLECTION_PREFIX=dev_ npm run dev
+STORAGE=firestore FIRESTORE_PROJECT_ID=<project> FIRESTORE_NAMESPACE=dev npm run dev
 ```
 
-`FIRESTORE_COLLECTION_PREFIX` namespaces every collection, so several people or environments
-can share one database. Start-up is safe to repeat: existing Crew Leads are kept, and demo data
+`FIRESTORE_NAMESPACE` keeps an environment's data under `environments/<namespace>`, so several
+people or environments can share one database (the default, empty, uses root collections). Start-up is safe to repeat: existing Crew Leads are kept, and demo data
 is seeded only once per data set.
 
 ### Scripts

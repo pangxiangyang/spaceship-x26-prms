@@ -22,19 +22,31 @@ const COLLECTIONS = [
 /** gRPC status returned when `create` finds an existing document. */
 const ALREADY_EXISTS = 6;
 
-const PREFIX_PATTERN = /^[A-Za-z0-9_-]*$/;
+const NAMESPACE_PATTERN = /^[A-Za-z0-9_-]*$/;
+/** Firestore reserves document ids of this form. */
+const RESERVED_ID = /^__.*__$/;
 
 /**
- * Firestore-backed storage. `collectionPrefix` namespaces every collection, so
- * several environments (or test runs) can share one database safely.
+ * Where an environment's collections live. The default namespace uses root collections;
+ * any other lives under `environments/{namespace}`. Either way the collection ids stay
+ * `bookings`, `auditEvents` and so on, which is what composite indexes are defined on.
  */
-export function createFirestorePersistence(db: Firestore, collectionPrefix = ''): Persistence {
-  if (!PREFIX_PATTERN.test(collectionPrefix)) {
-    throw new Error('Firestore collection prefix may contain only letters, digits, "_" and "-".');
+export function firestoreCollections(db: Firestore, namespace: string): FirestoreCollections {
+  if (!NAMESPACE_PATTERN.test(namespace) || RESERVED_ID.test(namespace)) {
+    throw new Error('A Firestore namespace may contain only letters, digits, "_" and "-".');
   }
-  const collections = Object.fromEntries(
-    COLLECTIONS.map((name) => [name, db.collection(`${collectionPrefix}${name}`)]),
+  const parent = namespace ? db.collection('environments').doc(namespace) : db;
+  return Object.fromEntries(
+    COLLECTIONS.map((name) => [name, parent.collection(name)]),
   ) as unknown as FirestoreCollections;
+}
+
+/**
+ * Firestore-backed storage. A `namespace` keeps an environment's data apart (staging,
+ * a developer, a test run), so several can share one database safely.
+ */
+export function createFirestorePersistence(db: Firestore, namespace = ''): Persistence {
+  const collections = firestoreCollections(db, namespace);
   const unitOfWork = new FirestoreUnitOfWork(db, collections);
   const demoSeedDoc = collections.system.doc('demoSeed');
 

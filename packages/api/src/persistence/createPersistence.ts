@@ -9,6 +9,6 @@ export function createPersistence(storage: StorageConfig): Persistence {
     case 'memory':
       return createMemoryPersistence();
     case 'firestore':
-      return createFirestorePersistence(createFirestoreClient(storage), storage.collectionPrefix);
+      return createFirestorePersistence(createFirestoreClient(storage), storage.namespace);
   }
 }

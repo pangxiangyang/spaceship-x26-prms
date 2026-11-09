@@ -13,8 +13,8 @@ export type StorageConfig =
       /** Omit on Google Cloud: detected from the runtime or ADC. */
       projectId?: string;
       databaseId: string;
-      /** Namespaces every collection, e.g. `staging_`. */
-      collectionPrefix: string;
+      /** Keeps an environment's data apart, e.g. `staging`. Empty: root collections. */
+      namespace: string;
     };
 
 export interface AppConfig {
@@ -73,7 +73,7 @@ const envSchema = z.object({
   STORAGE: z.enum(['memory', 'firestore']).optional(),
   FIRESTORE_PROJECT_ID: z.string().min(1).optional(),
   FIRESTORE_DATABASE_ID: z.string().min(1).default('(default)'),
-  FIRESTORE_COLLECTION_PREFIX: z
+  FIRESTORE_NAMESPACE: z
     .string()
     .regex(/^[A-Za-z0-9_-]*$/, 'may contain only letters, digits, "_" and "-"')
     .default(''),
@@ -128,7 +128,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
           kind: 'firestore',
           ...(e.FIRESTORE_PROJECT_ID ? { projectId: e.FIRESTORE_PROJECT_ID } : {}),
           databaseId: e.FIRESTORE_DATABASE_ID,
-          collectionPrefix: e.FIRESTORE_COLLECTION_PREFIX,
+          namespace: e.FIRESTORE_NAMESPACE,
         }
       : { kind: 'memory' };
 
