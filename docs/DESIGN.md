@@ -12,13 +12,13 @@ and at most three Crew Leads.
 
 ## Layers
 
-| Layer                                                                                 | Responsibility                                                                                                | Depends on |
-| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------- |
-| **Entities & value objects** (`Passenger`, `Resource`, `Booking`, `TimeSlot`)         | Protect their own invariants: valid names, capacity range, state transitions such as `CONFIRMED → CHECKED_IN` | nothing    |
-| **Policies** (`MembershipTier`, `BookingPolicy`, `authorization`)                     | Small, pure rules                                                                                             | entities   |
-| **Application services** (`BookingService`, `PassengerService`, …)                    | Orchestrate a use case: authorize → load → apply rules → persist → audit                                      | ports      |
-| **Ports** (`UserRepository`, `BookingRepository`, `AuditLog`, `Clock`, `IdGenerator`) | Interfaces the domain needs from the outside world                                                            | —          |
-| **Adapters** (in-memory repositories, Express routes, JWT, bcrypt, React)             | Implement ports, or expose services                                                                           | domain     |
+| Layer                                                                                               | Responsibility                                                                                                | Depends on |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ---------- |
+| **Entities & value objects** (`Passenger`, `Resource`, `Booking`, `TimeSlot`)                       | Protect their own invariants: valid names, capacity range, state transitions such as `CONFIRMED → CHECKED_IN` | nothing    |
+| **Policies** (`MembershipTier`, `BookingPolicy`, `authorization`)                                   | Small, pure rules                                                                                             | entities   |
+| **Application services** (`BookingService`, `PassengerService`, …)                                  | Orchestrate a use case: authorize → load → apply rules → persist → audit                                      | ports      |
+| **Ports** (`UserRepository`, `BookingRepository`, `AuditLog`, `UnitOfWork`, `Clock`, `IdGenerator`) | Interfaces the domain needs from the outside world                                                            | —          |
+| **Adapters** (in-memory repositories, Express routes, JWT, bcrypt, React)                           | Implement ports, or expose services                                                                           | domain     |
 
 ## SOLID in practice
 

@@ -100,7 +100,8 @@ is seeded only once per data set.
 ## Live demo deployment
 
 [`deploy/cloud-run.sh`](deploy/cloud-run.sh) provisions and deploys everything. It is safe to
-re-run, so the same command ships each new version:
+re-run, so the same command ships each new version. It deploys committed code only (it stops
+on uncommitted or untracked files unless `ALLOW_DIRTY=1`):
 
 ```bash
 PROJECT_ID=<project> ./deploy/cloud-run.sh     # REGION defaults to asia-southeast1
@@ -120,12 +121,15 @@ PROJECT_ID=<project> ./deploy/cloud-run.sh     # REGION defaults to asia-southea
 
 What it sets up:
 
-- **Firestore** (Native mode) and an **Artifact Registry** repository. **Cloud Build** builds
-  the `Dockerfile`, so no local Docker is needed.
+- **Firestore** (Native mode) with the composite indexes in
+  [`deploy/firestore.indexes.json`](deploy/firestore.indexes.json) (the script waits until
+  new ones are built), and an **Artifact Registry** repository. **Cloud Build** builds the
+  `Dockerfile`, so no local Docker is needed.
 - A **runtime service account** with only `datastore.user` and access to its two secrets
   (`JWT_SECRET`, the Crew Lead roster) in **Secret Manager**.
 - The **Cloud Run service**: public, scales to zero, at most one instance (see
-  [docs/DESIGN.md](docs/DESIGN.md#concurrency-and-atomicity) for why).
+  [docs/DESIGN.md](docs/DESIGN.md#concurrency-and-atomicity) for why), with `/api/ready` as
+  its startup probe.
 - A **Cloud Run job** running the same image with `reset-demo.js`, and a **Cloud Scheduler**
   trigger with its own service account that is only allowed to run that job.
 
@@ -196,7 +200,7 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 │ routes → zod validation → domain services → presenters (DTOs)       │
 │ authenticate / requireRole · errorHandler (DomainError → HTTP)      │
 │ AuthService (bcrypt, JWT) · composition root · demo seed and reset  │
-│ Storage adapters: in-memory │ Firestore   (chosen by STORAGE)       │
+│ Storage: in-memory (from domain) │ Firestore   (chosen by STORAGE)  │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │ depends on (never the reverse)
 ┌────────────────────────── domain ───────────────────────────────────┐
@@ -204,7 +208,7 @@ To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asi
 │ Entities & value objects: Passenger, Resource, Booking, TimeSlot    │
 │ Policies: MembershipTier, BookingPolicy, authorization guards       │
 │ Ports: UserRepository, ResourceRepository, BookingRepository,       │
-│        AuditLog, Clock, IdGenerator                                 │
+│        AuditLog, UnitOfWork, Clock, IdGenerator                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -257,19 +261,21 @@ overlapping, wrong state, duplicate username) · `429` too many sign-in attempts
 
 | Suite  | Tests | Style                                                                     |
 | ------ | ----- | ------------------------------------------------------------------------- |
-| domain | 134   | Unit and service tests with a controllable clock, no mocks of the domain  |
-| api    | 61    | Integration tests over real HTTP (supertest) and a storage contract suite |
-| web    | 15    | API client, formatting rules, login and role-based routing                |
+| domain | 145   | Unit and service tests with a controllable clock, no mocks of the domain  |
+| api    | 86    | Integration tests over real HTTP (supertest) and a storage contract suite |
+| web    | 26    | API client, booking dialog, bookings, reports, audit paging, routing      |
 
-The domain was built test-first, level by level (see the commit history). Domain coverage
-is about 98% of lines.
+Of the 86 API tests, 18 are the Firestore half of the storage contract and are skipped
+unless a Firestore target is configured (see below). Every business rule has tests, and
+domain line coverage is about 99%.
 
 **Storage is tested against both backends.** One contract suite defines how every store must
 behave, and it runs against the in-memory stores and against Firestore. The whole API suite
 can also run on Firestore (`npm run test:firestore -w @prms/api`). CI does this on the
 Firestore emulator. Locally it runs against a real project when `PRMS_FIRESTORE_TEST_PROJECT`
-is set, writing under a throwaway prefix that is deleted afterwards. CI also starts the built
-production bundle as a smoke test.
+is set, writing under a throwaway namespace that is deleted afterwards. Run it on the real
+project after changing a query: the emulator does not enforce composite indexes. CI also
+starts the built production bundle as a smoke test.
 
 Some tests worth reading:
 

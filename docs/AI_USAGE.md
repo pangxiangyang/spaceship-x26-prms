@@ -17,10 +17,11 @@ product and scoping decisions:
    passengers _book_ resources, and Crew Leads get an admin module. Claude proposed the
    layered architecture (domain / api / web) and the booking model (time slot + capacity +
    check-in), and I approved it before any code was written.
-3. **Implementation.** Claude built the system level by level, test-first: tests for each
-   domain module, then the implementation, then a commit. The API and web layers followed
-   the same order. The commit history shows that progression.
-4. **Verification.** Claude ran the full suite (lint, typecheck, 164 tests), deliberately
+3. **Implementation.** Claude built the system level by level, writing each domain module's
+   tests with its implementation and committing per level; the API and web layers followed.
+   The commit history shows the levels, not the order within them: tests and code landed in
+   the same commits.
+4. **Verification.** Claude ran the full suite (lint, typecheck and every test), deliberately
    broke the booking lock to prove the concurrency test can fail, did a production build
    from a clean clone, and walked through the real UI in a headless browser (desktop and
    mobile) to catch integration problems.
@@ -38,6 +39,25 @@ product and scoping decisions:
 7. **Review.** I read the code for its structure and extension points, questioned the
    decisions that weren't obvious, and tested the live demo myself. That produced the roadmap
    and a clearer demand report. See [My review](#my-review).
+8. **Mock interview review and fixes.** A mock "tough technical interviewer" review of the
+   repository found that the docs promised more than the code guaranteed. Claude worked
+   through its findings test-first (each fix started from a failing test, one commit per
+   fix) and ran the storage tests against the real Firestore project:
+   - Booking safety moved from an in-process lock into storage. Every change is a unit of
+     work (a Firestore transaction) that also writes its audit record, so it holds across
+     instances, the reset job and deploys. A test with two domain instances on one store
+     shows exactly 3 of 10 bookings succeed on a capacity-3 resource; before, 4 did.
+   - An account and its password are written together, and storage itself enforces unique
+     usernames and three Crew Leads.
+   - Booking and audit queries are bounded by time and paged in the database, with the
+     composite indexes deployed by the script, instead of reading whole collections.
+   - The demand report counts different passengers turned away, by when it happened.
+   - Smaller fixes: a stale tier in the header, a late-night default start time in the past,
+     the booking policy in `/api/meta`, sign-in timing, average use for resources added
+     mid-period, a readiness probe, per-account write limits, and a deploy script that
+     refuses uncommitted code.
+   - It also found a bug the old seed had hidden: the daily reset (20:00 UTC) asked for slots
+     that had already started, so the demo quietly lost its turn-aways.
 
 ## Which portions were AI-assisted?
 
@@ -50,6 +70,10 @@ my direction. The decisions that were mine:
 - the questions raised in my review and the changes they led to (below)
 - what to leave out: the deck plan and the availability timeline went into the roadmap, not
   the build
+- in the mock review round: keeping the booking form's disabled _Confirm_ for full slots (and
+  documenting where turn-aways come from), two different passengers as the high-demand
+  threshold, and leaving its product questions (Crew Lead hand-over, fairness limits,
+  no-shows, emergencies) out of this submission
 - the repository, its history and the submission
 
 ## My review
@@ -115,4 +139,5 @@ only the 75% threshold. I asked for the report to explain itself (commit `db20f8
 - the badge and the shortage banner name the rule that applied ("High · 6 turned away");
 - the explanation shows the thresholds the server used, instead of the page repeating 75%.
 
-The rule itself did not change.
+The rule itself did not change then. The mock review later changed it (step 8): one passenger
+retrying could mark a resource as high demand, so it now takes two different passengers.
