@@ -66,6 +66,10 @@ refusals, and a cancellation could offer the place to the first person waiting.
 
 ## Operations
 
+- **Deploy from CI.** Today a person runs `deploy/cloud-run.sh`, which refuses uncommitted
+  code but cannot know whether CI passed. A deploy job in GitHub Actions, after the test jobs
+  and authenticated with Workload Identity Federation (no stored keys), would deploy only
+  what CI verified.
 - **More than one instance.** Bookings are already safe across instances (see
   [DESIGN.md](DESIGN.md#concurrency-and-atomicity)). The sign-in rate limiter counts per
   instance, so it would move to a shared store first.

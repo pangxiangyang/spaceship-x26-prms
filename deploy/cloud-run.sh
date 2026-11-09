@@ -7,6 +7,9 @@
 #
 #   PROJECT_ID=my-project ./deploy/cloud-run.sh
 #
+# Deploys committed code only: Cloud Build builds the working tree, so the script refuses
+# uncommitted or untracked files unless ALLOW_DIRTY=1 (the image tag then ends in -dirty).
+#
 # Requires gcloud signed in with owner rights on the project, plus git and openssl.
 set -euo pipefail
 
@@ -22,7 +25,13 @@ DEMO_CREW_PASSWORD="${DEMO_CREW_PASSWORD:-mission-control}"
 
 RUNTIME_SA="prms-runtime@${PROJECT_ID}.iam.gserviceaccount.com"
 SCHEDULER_SA="prms-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
-TAG="$(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo '-dirty')"
+if [[ -n "$(git status --porcelain)" && "${ALLOW_DIRTY:-0}" != 1 ]]; then
+  echo "The working tree has uncommitted or untracked files:" >&2
+  git status --short >&2
+  echo "Commit them first, or set ALLOW_DIRTY=1 to deploy them anyway." >&2
+  exit 1
+fi
+TAG="$(git rev-parse --short HEAD)$([[ -z "$(git status --porcelain)" ]] || echo '-dirty')"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}/prms:${TAG}"
 
 ENV_VARS="NODE_ENV=production,STORAGE=firestore,SEED_DEMO_DATA=true,TRUST_PROXY=1"
