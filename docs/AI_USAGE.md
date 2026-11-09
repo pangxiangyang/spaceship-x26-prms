@@ -35,6 +35,9 @@ product and scoping decisions:
    (an ESM named import that the test runner masked), which led to a CI smoke test of the
    built bundle. It also found and removed stray config files that an earlier scaffolding step
    had written to the wrong directory.
+7. **Review.** I read the code for its structure and extension points, questioned the
+   decisions that weren't obvious, and tested the live demo myself. That produced the roadmap
+   and a clearer demand report. See [My review](#my-review).
 
 ## Which portions were AI-assisted?
 
@@ -44,33 +47,72 @@ my direction. The decisions that were mine:
 - which challenge to take, the language, and the "full web app with booking" product direction
 - approving the architecture and the booking model
 - hosting the live demo on Cloud Run with Firestore, in my own Google Cloud project
+- the questions raised in my review and the changes they led to (below)
+- what to leave out: the deck plan and the availability timeline went into the roadmap, not
+  the build
 - the repository, its history and the submission
 
-<!--
-  Before submitting, replace this comment with an honest account of your own review, e.g.:
-  - which files you read line by line,
-  - anything you changed, questioned or asked Claude to redo,
-  - which flows you clicked through yourself.
-  Reviewers are told you are responsible for everything submitted, so be specific.
--->
+## My review
 
-## Prompts / workflow worth sharing
+I'm responsible for everything submitted, so I reviewed the work in two ways before
+submitting.
 
-The main prompts were short and conversational:
+### Reading the code for structure and extension points
 
-> "Attached are 2 coding challenges… Which one do you prefer? Personally I like the space
-> resource management better."
+I read the code to understand its overall structure. I concentrated on how it would grow
+rather than on every line: where a new booking rule or restriction would go, how storage is
+swapped, and where the user experience could improve. What I took away:
 
-> "Why don't we create a full fledged web app. I can imagine that as normal passengers, they
-> get to book the resources. For lead / admin, they have access to an admin module to handle
-> administrative stuff."
+- **Layers.** The business rules live in `packages/domain` and know nothing about HTTP or
+  storage. The API and the web app sit on top, and storage plugs in behind repository
+  interfaces. Adding Firestore showed this works: the domain services did not change.
+- **New booking rules.** `BookingService.book` runs its checks in order: slot limits, tier
+  access, the passenger's own overlapping bookings, then capacity. A new restriction, such as
+  a daily limit per passenger, would be one more check there. A refusal from it would be
+  audited with its rule code automatically, because every booking attempt runs inside
+  `AuditTrail.track`.
+- **Tunable values.** Durations, the booking horizon and the check-in window are in
+  `BookingPolicy`. The demand thresholds are in `ReportService`. Each is defined once and can
+  be passed in, but the API uses the defaults.
 
-> "go"
+I then questioned Claude on what the code alone didn't settle. Each question either
+confirmed a deliberate decision or became a documented follow-up:
 
-> "Host it in cloud run and use firestore for a live demo. You may login via my adc"
+- **How is "exactly three Crew Leads" enforced, when the demo accounts already exist?** The
+  roster is configuration (`PRMS_CREW_LEADS`), registered at start-up. There is no API to add
+  a lead, and the server refuses to start with two or four. I kept this. Replacing a lead
+  isn't supported yet (start-up refuses a fourth), so an audited hand-over is in
+  [ROADMAP.md](ROADMAP.md).
+- **Is the check-in rule hard-coded?** It is a default in `BookingPolicy`, defined once: from
+  15 minutes before the start until the end of the slot. The web app repeats the 15 minutes
+  instead of reading it from the API, and that duplication is listed in the roadmap.
+- **Is the high-usage threshold hard-coded?** It is also a default defined once (75% high,
+  40% moderate). The roadmap proposes reading it from configuration or a Crew Lead settings
+  page, with every change audited.
+- **Can Crew Leads book resources?** No, by design: they are a separate role from passengers.
+  I kept this, and it is recorded in [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
-Most of the leverage came from agreeing on the shape up front (layers, booking model, test
-strategy, commit per level) and then letting the agent run with tight feedback loops: write
-a test, watch it fail, implement, run lint, typecheck and tests, commit, push. Writing
-`docs/ASSUMPTIONS.md` turned the brief's ambiguity into explicit, reviewable decisions
-instead of hidden ones.
+For the user experience, I proposed two features:
+
+- a bird's-eye deck plan showing where each resource is on the ship;
+- a timeline in the booking dialog with booked slots greyed out, so passengers don't have to
+  find a free slot by trial and error.
+
+I judged both too much for this submission. They are written up in [ROADMAP.md](ROADMAP.md),
+with how each would fit the current design.
+
+### Testing the application by hand
+
+Before giving the final sign-off, I used the live demo as a passenger and as a Crew Lead. One
+reading I flagged: the resource demand report on the Reports page marked the Luxury O2 Pod as
+high demand while showing 7% usage.
+
+The rule was right: six booking attempts had been turned away because the pod was full. But
+the page showed only average use, which quiet hours pull down, and its explanation mentioned
+only the 75% threshold. I asked for the report to explain itself (commit `db20f8a`):
+
+- a **Peak use** column next to **Average use** (Luxury O2 Pod: 7% average, 100% peak);
+- the badge and the shortage banner name the rule that applied ("High · 6 turned away");
+- the explanation shows the thresholds the server used, instead of the page repeating 75%.
+
+The rule itself did not change.
