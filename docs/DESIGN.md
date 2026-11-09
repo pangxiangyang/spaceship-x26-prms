@@ -67,9 +67,51 @@ to interleave. All operations that change booking state therefore run through on
 decommission. A test fires 10 concurrent requests at a capacity-3 resource and expects
 exactly 3 successes. With the lock removed, all 10 succeed, so the test is known to catch the bug.
 
-The mutex is correct for one process. With a real database, the same guarantee would come
-from a transaction (`SELECT … FOR UPDATE` on the resource row, or a serializable
-transaction), and the mutex would be removed. The service code would otherwise stay the same.
+The mutex is correct for one process, which is why the Cloud Run service is capped at
+`--max-instances=1`. For a demo-sized ship, one instance handling many concurrent requests is
+plenty. To scale out, the check would move into the database: a Firestore transaction
+that reads the resource's overlapping bookings and writes the new booking. Firestore retries
+the transaction if another writer touched those documents first. That needs a
+"unit of work" port so the booking service can run its read-check-write inside one
+transaction, and then the mutex would be removed. The rules themselves wouldn't change.
+
+## Persistence
+
+The domain defines four storage ports. The API package provides two implementations, chosen
+by `STORAGE`:
+
+- **In-memory** for development and tests: fast, and nothing to set up.
+- **Firestore** for the live demo. Each port maps to one collection (`users`, `resources`,
+  `bookings`, `auditEvents`), plus `credentials` for password hashes and `system` for the
+  demo-seed marker.
+
+Choices worth noting:
+
+- **Entities are rebuilt through the domain, not deserialised blindly.** `Resource` and
+  `Booking` expose `toSnapshot()` / `restore()`. `restore()` re-runs the entity's validation,
+  so a corrupt document is rejected at the boundary instead of leaking into business logic.
+- **No index configuration to deploy.** Every query filters on a single field, which
+  Firestore serves from its automatic single-field indexes. The audit log pushes its most
+  selective filter to Firestore and applies the rest with the same `matchesAuditQuery`
+  function the in-memory store uses, so both behave identically.
+- **Integrity where Firestore can guarantee it.** Username uniqueness is a transactional
+  check-and-write. Audit events use `create()`, so an event can never be overwritten.
+- **One contract, two backends.** `persistenceContract.ts` specifies the behaviour every store
+  must have, and runs against both. The whole API suite can also run on Firestore, which
+  catches what an in-memory store would hide: a service that changes an entity and forgets to
+  save it still "works" in memory, because the store holds the same object.
+- **Start-up is idempotent.** Configured Crew Leads are reconciled on every start (created if
+  missing, password updated if the configuration rotated it). Demo data is seeded only by the
+  process that wins an atomic `create()` of a marker document, so two instances starting
+  together can't both seed.
+
+### Live demo operations
+
+The live demo resets daily. A Cloud Run **job** built from the same image wipes the collections
+and reseeds a fresh week ending "now", so reports always have recent data and whatever
+visitors changed is undone. The reset refuses to run unless demo mode is on, so it can never
+wipe real data. Sessions from before a reset stop working straight away, because
+authentication checks that the account still exists.
 
 ## Capacity is peak simultaneous use
 

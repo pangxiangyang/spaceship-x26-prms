@@ -5,18 +5,22 @@ A full-stack TypeScript application for the Spaceship X26 Earth → Mars settlem
 **Crew Leads** (exactly three of them) manage passengers, tiers and resources and monitor
 usage through an audit trail and reports.
 
+**Live demo: <https://prms-491279436702.asia-southeast1.run.app>**. The login page lists one account per role. The demo
+runs on Cloud Run with Firestore and resets to fresh data every day at 04:00 (Singapore time).
+
 ```
 packages/
   domain/   Pure business rules. No framework, no I/O. Most of the logic and tests live here.
-  api/      Express 5 REST API: auth, validation, HTTP mapping, composition root, demo seed.
+  api/      Express 5 REST API: auth, validation, HTTP mapping, storage adapters, demo seed.
   web/      React 19 + Vite single-page app: passenger app and Crew Lead admin module.
+deploy/     Script that provisions and deploys the live demo on Google Cloud.
 ```
 
 ---
 
 ## Quick start
 
-Requirements: **Node.js ≥ 20.11** (22 recommended, see `.nvmrc`).
+Requirements: **Node.js ≥ 22** (see `.nvmrc`).
 
 ```bash
 npm ci
@@ -24,8 +28,8 @@ npm run dev
 ```
 
 Open **http://localhost:5173**. The API runs on :3000 and the Vite dev server proxies `/api` to it.
-In development the ship comes pre-loaded with ten resources, seven passengers and a week of
-realistic activity.
+Locally the data lives in memory, and the ship comes pre-loaded with ten resources, seven
+passengers and a week of realistic activity.
 
 | Role               | Username       | Password       |
 | ------------------ | -------------- | -------------- |
@@ -36,13 +40,15 @@ realistic activity.
 | Gold passenger     | `gwen.gold`    | `passenger123` |
 | Platinum passenger | `pia.platinum` | `passenger123` |
 
-The login page also has a _Demo accounts_ shortcut.
+The login page has the same accounts under _Demo accounts_. On the live demo the Crew Lead
+password is different, and the login page shows it.
 
 ### Production build
 
 ```bash
 npm run build      # builds web/dist and api/dist
 NODE_ENV=production \
+STORAGE=memory \
 JWT_SECRET="$(openssl rand -hex 32)" \
 PRMS_CREW_LEADS='[{"username":"commander","displayName":"Cmdr. Ava Reyes","password":"<12+ chars>"},{"username":"navigator","displayName":"Lt. Kenji Sato","password":"<12+ chars>"},{"username":"medic","displayName":"Dr. Leila Haddad","password":"<12+ chars>"}]' \
 npm start          # http://localhost:3000 serves the API and the web app
@@ -52,21 +58,78 @@ Or with Docker:
 
 ```bash
 docker build -t x26-prms .
-docker run -p 3000:3000 -e JWT_SECRET=... -e PRMS_CREW_LEADS='[...]' -e SEED_DEMO_DATA=true x26-prms
+docker run -p 3000:3000 -e STORAGE=memory -e JWT_SECRET=... -e PRMS_CREW_LEADS='[...]' -e SEED_DEMO_DATA=true x26-prms
 ```
 
 Configuration is documented in [`.env.example`](.env.example). In production the server
-**refuses to start** without a strong `JWT_SECRET` and exactly three Crew Leads.
+**refuses to start** without a strong `JWT_SECRET`, exactly three Crew Leads, and an explicit
+`STORAGE` choice.
+
+### Storage
+
+| `STORAGE`   | Used for                  | Notes                                                       |
+| ----------- | ------------------------- | ----------------------------------------------------------- |
+| `memory`    | development, tests        | Fast and zero setup. Data is lost on restart.               |
+| `firestore` | the live demo, production | Google Cloud Firestore (Native mode), credentials from ADC. |
+
+To run locally against a real Firestore database:
+
+```bash
+gcloud auth application-default login
+STORAGE=firestore FIRESTORE_PROJECT_ID=<project> FIRESTORE_COLLECTION_PREFIX=dev_ npm run dev
+```
+
+`FIRESTORE_COLLECTION_PREFIX` namespaces every collection, so several people or environments
+can share one database. Start-up is safe to repeat: existing Crew Leads are kept, and demo data
+is seeded only once per data set.
 
 ### Scripts
 
-| Command                 | What it does                                      |
-| ----------------------- | ------------------------------------------------- |
-| `npm run dev`           | API (watch mode) + web dev server                 |
-| `npm test`              | All test suites (domain, api, web)                |
-| `npm run test:coverage` | Tests with coverage reports                       |
-| `npm run verify`        | Lint + typecheck + tests, the same checks CI runs |
-| `npm run build`         | Production build                                  |
+| Command                               | What it does                                        |
+| ------------------------------------- | --------------------------------------------------- |
+| `npm run dev`                         | API (watch mode) + web dev server                   |
+| `npm test`                            | All test suites (domain, api, web)                  |
+| `npm run test:coverage`               | Tests with coverage reports                         |
+| `npm run verify`                      | Lint + typecheck + tests                            |
+| `npm run build`                       | Production build                                    |
+| `npm run test:firestore -w @prms/api` | API suite on Firestore (emulator or a test project) |
+| `npm run demo:reset -w @prms/api`     | Wipe and reseed the configured storage (demo only)  |
+
+---
+
+## Live demo deployment
+
+[`deploy/cloud-run.sh`](deploy/cloud-run.sh) provisions and deploys everything. It is safe to
+re-run, so the same command ships each new version:
+
+```bash
+PROJECT_ID=<project> ./deploy/cloud-run.sh     # REGION defaults to asia-southeast1
+```
+
+```
+                 Cloud Scheduler (daily 04:00)
+                            │ runs
+                            ▼
+ browser ──HTTPS──▶ Cloud Run service "prms"        Cloud Run job "prms-demo-reset"
+                    (API + web app, 0–1 instances)  (wipe + reseed, same image)
+                            │                                  │
+                            └──────────────┬───────────────────┘
+                                           ▼
+                         Firestore (asia-southeast1) · Secret Manager
+```
+
+What it sets up:
+
+- **Firestore** (Native mode) and an **Artifact Registry** repository. **Cloud Build** builds
+  the `Dockerfile`, so no local Docker is needed.
+- A **runtime service account** with only `datastore.user` and access to its two secrets
+  (`JWT_SECRET`, the Crew Lead roster) in **Secret Manager**.
+- The **Cloud Run service**: public, scales to zero, at most one instance (see
+  [docs/DESIGN.md](docs/DESIGN.md#concurrency) for why).
+- A **Cloud Run job** running the same image with `reset-demo.js`, and a **Cloud Scheduler**
+  trigger with its own service account that is only allowed to run that job.
+
+To reset the demo by hand: `gcloud run jobs execute prms-demo-reset --region asia-southeast1`.
 
 ---
 
@@ -74,8 +137,8 @@ Configuration is documented in [`.env.example`](.env.example). In production the
 
 ### Level 1: Basic passenger & resource management
 
-- **Crew Lead enforcement.** Exactly three Crew Leads. The roster is defined at
-  start-up only; there is no API to add administrators. Registering a fourth is
+- **Crew Lead enforcement.** Exactly three Crew Leads. The roster is defined in
+  configuration only; there is no API to add administrators. Registering a fourth is
   rejected with `CREW_LEAD_LIMIT_REACHED`, even when registrations race, and the attempt
   is audited. The server will not boot with fewer or more than three.
 - **Resource definition.** Each resource has a category, a **minimum tier** and a
@@ -118,27 +181,30 @@ Configuration is documented in [`.env.example`](.env.example). In production the
 ## Architecture
 
 ```
-            ┌──────────────── web (React) ────────────────┐
+            ┌──────────────── web (React) ─────────────────────┐
             │ pages → hooks (useApiData/useAction) → ApiClient │
-            └───────────────────────┬─────────────────────┘
+            └───────────────────────┬──────────────────────────┘
                                     │ HTTP/JSON  (Bearer JWT)
-┌──────────────────────── api (Express) ─────────────────────────┐
-│ routes → zod validation → domain services → presenters (DTOs)  │
-│ authenticate / requireRole · errorHandler (DomainError → HTTP) │
-│ AuthService (bcrypt, JWT) · composition root · demo seed       │
-└───────────────────────────────┬────────────────────────────────┘
+┌──────────────────────── api (Express) ──────────────────────────────┐
+│ routes → zod validation → domain services → presenters (DTOs)       │
+│ authenticate / requireRole · errorHandler (DomainError → HTTP)      │
+│ AuthService (bcrypt, JWT) · composition root · demo seed and reset  │
+│ Storage adapters: in-memory │ Firestore   (chosen by STORAGE)       │
+└───────────────────────────────┬─────────────────────────────────────┘
                                 │ depends on (never the reverse)
-┌────────────────────────── domain ──────────────────────────────┐
+┌────────────────────────── domain ───────────────────────────────────┐
 │ Services: CrewLead · Passenger · Resource · Booking · Report · Audit │
-│ Entities & value objects: Passenger, Resource, Booking, TimeSlot │
-│ Policies: MembershipTier, BookingPolicy, authorization guards  │
-│ Ports: UserRepository, ResourceRepository, BookingRepository,  │
-│        AuditLog, Clock, IdGenerator   ← in-memory adapters     │
-└────────────────────────────────────────────────────────────────┘
+│ Entities & value objects: Passenger, Resource, Booking, TimeSlot    │
+│ Policies: MembershipTier, BookingPolicy, authorization guards       │
+│ Ports: UserRepository, ResourceRepository, BookingRepository,       │
+│        AuditLog, Clock, IdGenerator                                 │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 Dependencies point inward. The domain knows nothing about HTTP, Express, React, JWTs or
-storage, so it can be tested quickly and in isolation (125 tests run in about 1.5 s).
+Firestore, so it can be tested quickly and in isolation (132 tests run in about 1.5 s). Adding
+Firestore didn't change a single domain service. It only needed new adapters for the
+existing ports.
 
 Design decisions, the patterns used and why, and the trade-offs are written up in
 **[docs/DESIGN.md](docs/DESIGN.md)**. Every interpretation of the brief is listed in
@@ -152,6 +218,7 @@ Errors share one shape: `{ "error": { "code": "CAPACITY_EXCEEDED", "message": "�
 | Method & path                                | Who        | Purpose                                     |
 | -------------------------------------------- | ---------- | ------------------------------------------- |
 | `POST /api/auth/login`                       | anyone     | Sign in (rate-limited)                      |
+| `GET /api/meta`                              | anyone     | Tiers, categories, policy, demo accounts    |
 | `GET /api/me`                                | signed in  | Current user                                |
 | `GET /api/resources`                         | passenger  | Resources the tier grants                   |
 | `GET /api/resources/:id/occupancy?from&to`   | passenger  | Anonymised booked slots (≤ 7 days)          |
@@ -172,22 +239,31 @@ Errors share one shape: `{ "error": { "code": "CAPACITY_EXCEEDED", "message": "�
 | `GET /api/admin/reports/tier-usage`          | crew       | Usage grouped by tier                       |
 | `GET /api/admin/reports/resource-demand`     | crew       | Utilisation, turn-aways, demand level       |
 
-Status codes: `400` invalid input · `401` not signed in · `403` role or tier not allowed ·
-`404` unknown · `409` conflicts with current state (full, overlapping, wrong state, duplicate
-username) · `429` too many sign-in attempts.
+Status codes: `400` invalid input · `401` not signed in, or the account no longer exists ·
+`403` role or tier not allowed · `404` unknown · `409` conflicts with current state (full,
+overlapping, wrong state, duplicate username) · `429` too many sign-in attempts.
 
 ---
 
 ## Testing
 
-| Suite  | Tests | Style                                                                    |
-| ------ | ----- | ------------------------------------------------------------------------ |
-| domain | 125   | Unit and service tests with a controllable clock, no mocks of the domain |
-| api    | 27    | Integration tests over real HTTP with supertest                          |
-| web    | 12    | API client, formatting rules and role-based routing (Testing Library)    |
+| Suite  | Tests | Style                                                                     |
+| ------ | ----- | ------------------------------------------------------------------------- |
+| domain | 132   | Unit and service tests with a controllable clock, no mocks of the domain  |
+| api    | 61    | Integration tests over real HTTP (supertest) and a storage contract suite |
+| web    | 14    | API client, formatting rules, login and role-based routing                |
 
 The domain was built test-first, level by level (see the commit history). Domain coverage
-is about 98% of lines. Some tests worth reading:
+is about 98% of lines.
+
+**Storage is tested against both backends.** One contract suite defines how every store must
+behave, and it runs against the in-memory stores and against Firestore. The whole API suite
+can also run on Firestore (`npm run test:firestore -w @prms/api`). CI does this on the
+Firestore emulator. Locally it runs against a real project when `PRMS_FIRESTORE_TEST_PROJECT`
+is set, writing under a throwaway prefix that is deleted afterwards. CI also starts the built
+production bundle as a smoke test.
+
+Some tests worth reading:
 
 - `BookingService.test.ts › never overbooks under concurrent requests`: 10 simultaneous
   requests on a capacity-3 resource produce exactly 3 bookings. With the lock removed,
@@ -195,20 +271,20 @@ is about 98% of lines. Some tests worth reading:
 - `TimeSlot.test.ts › counts simultaneous use, not the number of overlapping bookings`
 - `PassengerService.test.ts › on downgrade, revokes only pending bookings the new tier no longer covers`
 - `ReportService.test.ts › groups usage by the tier held at booking time`
+- `bootstrap.test.ts › restarts on the same storage without duplicating crew leads or demo data`
 
 ---
 
 ## Known limitations & next steps
 
-- **Persistence is in-memory**, behind repository interfaces, so data resets on restart.
-  A database adapter (e.g. PostgreSQL) would implement the same four ports. Capacity would then
-  be protected by a transaction or row lock instead of the in-process mutex, which is correct
-  only for a single API instance.
+- **One instance.** Booking capacity is protected by an in-process lock, so the Cloud Run
+  service runs at most one instance. Scaling out means moving that check into a Firestore
+  transaction on the resource. [docs/DESIGN.md](docs/DESIGN.md#concurrency) describes how.
+- Audit and report queries filter part of the data in memory. That's fine for one ship, but
+  at scale it would need composite indexes, cursor paging and database-side aggregation.
 - Passwords are set by Crew Leads at creation. There's no self-service reset yet.
-- JWTs are stateless, so sign-out is client-side. A revocation list or short-lived tokens
-  with refresh would harden this.
-- Report queries scan in memory, which is fine for a ship's population but would need
-  database-side aggregation at scale.
+- JWTs are stateless, so sign-out is client-side. Tokens stop working as soon as their
+  account no longer exists, but a revocation list or refresh tokens would harden this further.
 
 ---
 

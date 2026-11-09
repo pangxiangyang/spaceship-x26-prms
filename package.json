@@ -10,7 +10,7 @@
     "packages/web"
   ],
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22"
   },
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w @prms/api\" \"npm run dev -w @prms/web\"",

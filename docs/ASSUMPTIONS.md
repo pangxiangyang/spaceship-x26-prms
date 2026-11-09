@@ -77,10 +77,23 @@ These values live in one place (`BookingPolicy`) and can be changed without touc
   passwords, with comparable timing.
 - Authorization is enforced **inside the domain services**. The route-level role gate and
   the client-side route guards are defence in depth and UX only.
+- Every authenticated request checks that the account still exists, so a valid token for a
+  removed account (for example after a demo reset) is rejected.
+- Behind Cloud Run, the client address comes from `X-Forwarded-For` (`TRUST_PROXY=1`), so the
+  sign-in limit applies per visitor rather than to everyone at once.
+
+## Live demo
+
+| Question                             | Decision                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Where is data stored?                | Firestore (Native mode) in `asia-southeast1`, the same region as the Cloud Run service.                                                           |
+| Demo credentials                     | Published on the login page (demo mode only). The Crew Lead password lives in Secret Manager like a real one, but its value is public on purpose. |
+| Keeping the demo fresh               | A scheduled job wipes and reseeds daily at 04:00 Singapore time. Anything visitors change lasts until then.                                       |
+| Instances                            | At most one: capacity checks rely on an in-process lock (see DESIGN.md).                                                                          |
+| Visitors interfering with each other | Accepted for a shared demo. The daily reset bounds the damage.                                                                                    |
 
 ## Out of scope
 
-- Durable storage (repository interfaces are ready for it)
 - Multi-instance deployment (the booking lock is in-process)
 - Password reset, account deactivation, token revocation
 - Recurring bookings, waitlists, notifications

@@ -2,7 +2,8 @@
 
 ## Which AI tools were used?
 
-- **Claude Code** (Anthropic), running in a cloud session with access to this repository.
+- **Claude Code** (Anthropic): first in a cloud session with access to this repository, later
+  in VS Code on my machine, using my Google Cloud credentials (ADC) to deploy.
 
 ## How were they used?
 
@@ -25,6 +26,15 @@ product and scoping decisions:
    mobile) to catch integration problems.
 5. **Documentation.** The README, design notes and assumptions log were drafted by Claude
    from the decisions made along the way.
+6. **Live demo.** I asked for a hosted demo on Cloud Run backed by Firestore, in a Google Cloud
+   project I created. Claude added Firestore adapters behind the existing repository ports
+   (the domain services did not change), a storage contract suite that runs against both
+   backends, an idempotent start-up, a daily demo reset job, and an idempotent deploy script.
+   It ran the contract suite and the whole API suite against the real Firestore database, then
+   ran the built bundle locally against Firestore. That run caught a production-only crash
+   (an ESM named import that the test runner masked), which led to a CI smoke test of the
+   built bundle. It also found and removed stray config files that an earlier scaffolding step
+   had written to the wrong directory.
 
 ## Which portions were AI-assisted?
 
@@ -33,6 +43,7 @@ my direction. The decisions that were mine:
 
 - which challenge to take, the language, and the "full web app with booking" product direction
 - approving the architecture and the booking model
+- hosting the live demo on Cloud Run with Firestore, in my own Google Cloud project
 - the repository, its history and the submission
 
 <!--
@@ -55,6 +66,8 @@ The main prompts were short and conversational:
 > administrative stuff."
 
 > "go"
+
+> "Host it in cloud run and use firestore for a live demo. You may login via my adc"
 
 Most of the leverage came from agreeing on the shape up front (layers, booking model, test
 strategy, commit per level) and then letting the agent run with tight feedback loops: write
